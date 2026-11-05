@@ -23,6 +23,20 @@ language sql stable security definer set search_path = public as $$
     false)
 $$;
 
+-- ผู้ดูแลระบบ: เห็น/แก้/ลบได้ทุกชุดคำถาม
+-- เพิ่มคนแรกด้วย SQL:  insert into app_admins (email) values ('อีเมล@princgroup.com');
+-- คนต่อไปเพิ่มจากหน้าเว็บได้
+create table if not exists public.app_admins (
+  email      text primary key check (email = lower(email)),
+  added_by   text,
+  created_at timestamptz not null default now()
+);
+create or replace function public.is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_staff()
+     and exists (select 1 from app_admins where email = lower(auth.jwt() ->> 'email'))
+$$;
+
 -- ---------------------------------------------------------------------
 -- 1) ตาราง
 -- ---------------------------------------------------------------------
@@ -94,6 +108,8 @@ create index if not exists answers_session_idx on public.answers (session_id, qu
 
 -- v2: รูปหน้าปก / สีคำตอบต่อข้อ / รูปในตัวเลือก
 alter table public.quizzes   add column if not exists cover_url text;
+-- v3: ส่วนตัว (false) / แชร์ให้ทุกแผนก (true)
+alter table public.quizzes   add column if not exists shared boolean not null default false;
 alter table public.sessions  add column if not exists cover_url text;
 alter table public.questions add column if not exists colors jsonb;          -- ["#rrggbb", ...] ต่อตัวเลือก
 alter table public.questions add column if not exists choice_images jsonb;   -- ["url" | "", ...] ต่อตัวเลือก
@@ -102,12 +118,14 @@ alter table public.questions add column if not exists choice_images jsonb;   -- 
 -- 2) สิทธิ์ (RLS) — ผู้เล่นไม่ต้องล็อกอิน เข้าถึงผ่านฟังก์ชันเท่านั้น
 -- ---------------------------------------------------------------------
 alter table public.app_config enable row level security;
+alter table public.app_admins enable row level security;
 alter table public.quizzes    enable row level security;
 alter table public.questions  enable row level security;
 alter table public.sessions   enable row level security;
 alter table public.players    enable row level security;
 alter table public.answers    enable row level security;
 
+revoke all on public.app_admins from anon, authenticated;
 revoke all on public.app_config, public.quizzes, public.questions,
               public.sessions, public.players, public.answers from anon;
 -- ให้สิทธิ์ชัดเจน (ใช้ได้แม้ปิด "Automatically expose new tables")
@@ -120,19 +138,23 @@ drop policy if exists quizzes_read   on public.quizzes;
 drop policy if exists quizzes_insert on public.quizzes;
 drop policy if exists quizzes_update on public.quizzes;
 drop policy if exists quizzes_delete on public.quizzes;
-create policy quizzes_read   on public.quizzes for select to authenticated using (public.is_staff());
+create policy quizzes_read   on public.quizzes for select to authenticated
+  using (public.is_staff() and (owner_id = auth.uid() or shared or public.is_admin()));
 create policy quizzes_insert on public.quizzes for insert to authenticated
   with check (public.is_staff() and owner_id = auth.uid());
 create policy quizzes_update on public.quizzes for update to authenticated
-  using (owner_id = auth.uid()) with check (owner_id = auth.uid());
-create policy quizzes_delete on public.quizzes for delete to authenticated using (owner_id = auth.uid());
+  using (owner_id = auth.uid() or public.is_admin()) with check (owner_id = auth.uid() or public.is_admin());
+create policy quizzes_delete on public.quizzes for delete to authenticated
+  using (owner_id = auth.uid() or public.is_admin());
 
 drop policy if exists questions_read  on public.questions;
 drop policy if exists questions_write on public.questions;
-create policy questions_read on public.questions for select to authenticated using (public.is_staff());
+-- เห็นคำถามได้เมื่อเห็นชุดคำถามนั้น (ตามสิทธิ์ของ quizzes)
+create policy questions_read on public.questions for select to authenticated
+  using (exists (select 1 from public.quizzes q where q.id = quiz_id));
 create policy questions_write on public.questions for all to authenticated
-  using (exists (select 1 from public.quizzes q where q.id = quiz_id and q.owner_id = auth.uid()))
-  with check (exists (select 1 from public.quizzes q where q.id = quiz_id and q.owner_id = auth.uid()));
+  using (exists (select 1 from public.quizzes q where q.id = quiz_id and (q.owner_id = auth.uid() or public.is_admin())))
+  with check (exists (select 1 from public.quizzes q where q.id = quiz_id and (q.owner_id = auth.uid() or public.is_admin())));
 
 drop policy if exists sessions_host on public.sessions;
 create policy sessions_host on public.sessions for select to authenticated using (host_id = auth.uid());
@@ -153,21 +175,24 @@ create policy answers_host on public.answers for select to authenticated
 
 -- บันทึกชุดคำถามทั้งชุดในครั้งเดียว (p_id = null คือสร้างใหม่)
 drop function if exists public.save_quiz(uuid, text, text, text, jsonb);
+drop function if exists public.save_quiz(uuid, text, text, text, jsonb, text);
 create or replace function public.save_quiz(
-  p_id uuid, p_title text, p_department text, p_description text, p_questions jsonb, p_cover text default null
+  p_id uuid, p_title text, p_department text, p_description text, p_questions jsonb,
+  p_cover text default null, p_shared boolean default false
 ) returns uuid language plpgsql security invoker set search_path = public as $$
 declare v_id uuid;
 begin
   if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
   if p_id is null then
-    insert into quizzes (title, department, description, cover_url)
-    values (trim(p_title), trim(coalesce(p_department, '')), coalesce(p_description, ''), nullif(p_cover, ''))
+    insert into quizzes (title, department, description, cover_url, shared)
+    values (trim(p_title), trim(coalesce(p_department, '')), coalesce(p_description, ''), nullif(p_cover, ''),
+            coalesce(p_shared, false))
     returning id into v_id;
   else
     update quizzes set title = trim(p_title), department = trim(coalesce(p_department, '')),
                        description = coalesce(p_description, ''), cover_url = nullif(p_cover, ''),
-                       updated_at = now()
-     where id = p_id and owner_id = auth.uid()
+                       shared = coalesce(p_shared, false), updated_at = now()
+     where id = p_id and (owner_id = auth.uid() or public.is_admin())
     returning id into v_id;
     if v_id is null then raise exception 'ไม่มีสิทธิ์แก้ไขชุดคำถามนี้'; end if;
     delete from questions where quiz_id = v_id;
@@ -211,6 +236,9 @@ begin
   if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
   select * into v_quiz from quizzes where id = p_quiz_id;
   if v_quiz.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  if not (v_quiz.owner_id = auth.uid() or v_quiz.shared or public.is_admin()) then
+    raise exception 'ชุดคำถามนี้เป็นแบบส่วนตัว';
+  end if;
 
   select jsonb_agg(jsonb_build_object(
            'text', text, 'image_url', image_url, 'choices', choices,
@@ -377,6 +405,35 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+-- จัดการรายชื่อผู้ดูแลระบบ (เฉพาะผู้ดูแล)
+create or replace function public.list_admins()
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  return coalesce((select jsonb_agg(email order by email) from app_admins), '[]'::jsonb);
+end $$;
+
+create or replace function public.add_admin(p_email text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v text := lower(trim(coalesce(p_email, '')));
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if v !~ ('^[^@\s]+@' || replace(lower((select allowed_domain from app_config where id = 1)), '.', '\.') || '$') then
+    raise exception 'ต้องเป็นอีเมล @%', (select allowed_domain from app_config where id = 1);
+  end if;
+  insert into app_admins (email, added_by) values (v, lower(auth.jwt() ->> 'email')) on conflict do nothing;
+  return public.list_admins();
+end $$;
+
+create or replace function public.remove_admin(p_email text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if (select count(*) from app_admins) <= 1 then raise exception 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน'; end if;
+  delete from app_admins where email = lower(trim(p_email));
+  return public.list_admins();
+end $$;
+
 -- ใช้กับ Apps Script กันโปรเจกต์ถูกพัก
 create or replace function public.ping()
 returns jsonb language sql security definer set search_path = public as $$
@@ -384,12 +441,14 @@ returns jsonb language sql security definer set search_path = public as $$
 $$;
 
 -- สิทธิ์เรียกฟังก์ชัน
-revoke execute on function public.save_quiz(uuid, text, text, text, jsonb, text),
+revoke execute on function public.save_quiz(uuid, text, text, text, jsonb, text, boolean),
+                           public.list_admins(), public.add_admin(text), public.remove_admin(text),
                            public.duplicate_quiz(uuid), public.create_session(uuid),
                            public.host_next(uuid), public.host_reveal(uuid),
                            public.host_end(uuid), public.host_kick(uuid)
   from public, anon;
-grant execute on function public.save_quiz(uuid, text, text, text, jsonb, text),
+grant execute on function public.save_quiz(uuid, text, text, text, jsonb, text, boolean),
+                          public.list_admins(), public.add_admin(text), public.remove_admin(text), public.is_admin(),
                           public.duplicate_quiz(uuid), public.create_session(uuid),
                           public.host_next(uuid), public.host_reveal(uuid),
                           public.host_end(uuid), public.host_kick(uuid)

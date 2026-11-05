@@ -159,6 +159,20 @@ textarea.inp{resize:vertical;min-height:62px}
   border-top:1px solid var(--line);z-index:6}
 .savebar .in{max-width:980px;margin:auto;display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));align-items:center}
 .savebar .st{font-size:13px;color:var(--muted)}
+/* v3: แชร์ / ผู้ดูแล */
+.vis{display:inline-block;font-size:12px;padding:2px 9px;border-radius:99px;font-weight:600;background:#eef1f4;color:var(--muted)}
+.vis.shared{background:#e3f4ea;color:#1b6b42}
+.switch{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:500}
+.switch input{appearance:none;-webkit-appearance:none;width:46px;height:26px;border-radius:99px;background:#cfd6dc;position:relative;
+  transition:background .2s;flex:none;cursor:pointer;margin:0}
+.switch input::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;
+  transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch input:checked{background:var(--good)}
+.switch input:checked::after{transform:translateX(20px)}
+.notice{background:#fff4d4;border:1px solid #f0d78c;border-radius:12px;padding:10px 14px;font-size:14px;margin-top:12px}
+.adminbox{margin-top:28px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:4px 16px}
+.adminbox summary{cursor:pointer;font-weight:600;padding:12px 0}
+.adminbox .it{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px dashed var(--line)}
 /* v2: หน้าปก / สี / รูปคำตอบ */
 .qz .cover{margin:-16px -16px 4px;aspect-ratio:16/7;border-radius:16px 16px 0 0;object-fit:cover;width:calc(100% + 32px);
   display:block;background:linear-gradient(135deg,var(--navy3),var(--navy));color:rgba(255,255,255,.85);
@@ -567,13 +581,15 @@ const Admin = {
     this.user = user;
     app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`);
     bindShell();
-    const [qz, live] = await Promise.all([
-      sb.from('quizzes').select('id,title,department,description,cover_url,owner_id,owner_email,updated_at,questions(count)')
+    const [qz, live, adm] = await Promise.all([
+      sb.from('quizzes').select('id,title,department,description,cover_url,shared,owner_id,owner_email,updated_at,questions(count)')
         .order('updated_at', { ascending: false }),
       sb.from('sessions').select('id,title,pin,status,created_at').neq('status', 'ended')
-        .eq('host_id', user.id).order('created_at', { ascending: false })
+        .eq('host_id', user.id).order('created_at', { ascending: false }),
+      sb.rpc('is_admin')
     ]);
     if (qz.error) { toast(errMsg(qz.error), true); return; }
+    this.isAdmin = adm.data === true;
     this.quizzes = qz.data || [];
     this.live = live.data || [];
     this.renderList();
@@ -589,11 +605,18 @@ const Admin = {
         <a class="btn sun" href="#edit/new">+ สร้างชุดคำถามใหม่</a></div>
       ${liveHTML}
       <div class="row" style="margin-top:16px">
-        <div class="tabs"><button data-tab="mine">ของฉัน</button><button data-tab="all">ทุกแผนก</button></div>
+        <div class="tabs"><button data-tab="mine">ของฉัน</button><button data-tab="all">${this.isAdmin ? 'ของคนอื่นทั้งหมด (ผู้ดูแล)' : 'แชร์จากทุกแผนก'}</button></div>
         <span class="grow"></span>
         <input class="search" id="q" placeholder="ค้นหาชื่อเกม / แผนก" value="${esc(this.q)}"></div>
-      <div id="cards"></div>`);
+      <div id="cards"></div>
+      ${this.isAdmin ? `<details class="adminbox" id="admbox"><summary>⚙ ผู้ดูแลระบบ</summary>
+        <p class="hint">ผู้ดูแลระบบเห็น แก้ไข และลบได้ทุกชุดคำถาม รวมถึงชุดส่วนตัว</p>
+        <div id="admlist"></div>
+        <form class="row" id="admform" style="padding:10px 0 14px">
+          <input class="inp grow" id="admemail" type="email" placeholder="อีเมล @${esc(CFG.ALLOWED_DOMAIN || '')}" style="min-width:0">
+          <button class="btn sm">+ เพิ่ม</button></form></details>` : ''}`);
     bindShell();
+    if (this.isAdmin) this.bindAdmins();
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === this.tab);
       b.onclick = () => { this.tab = b.dataset.tab; this.renderList(); }; });
     $('#q').oninput = e => { this.q = e.target.value; this.renderCards(); };
@@ -605,29 +628,31 @@ const Admin = {
   },
   renderCards() {
     const u = this.user, k = this.q.trim().toLowerCase();
-    let list = this.quizzes.filter(q => this.tab === 'all' || q.owner_id === u.id);
+    let list = this.quizzes.filter(q => this.tab === 'all' ? q.owner_id !== u.id : q.owner_id === u.id);
     if (k) list = list.filter(q => (q.title + ' ' + q.department + ' ' + q.owner_email).toLowerCase().includes(k));
     const box = $('#cards');
     if (!list.length) {
       box.innerHTML = `<div class="empty">${this.tab === 'mine' && !k
         ? 'ยังไม่มีชุดคำถาม กด “สร้างชุดคำถามใหม่” เพื่อเริ่ม'
-        : 'ไม่พบชุดคำถามที่ค้นหา'}</div>`;
+        : k ? 'ไม่พบชุดคำถามที่ค้นหา' : 'ยังไม่มีแผนกอื่นแชร์ชุดคำถาม'}</div>`;
       return;
     }
     box.innerHTML = `<div class="grid">${list.map(q => {
-      const mine = q.owner_id === u.id, n = (q.questions && q.questions[0] && q.questions[0].count) || 0;
+      const mine = q.owner_id === u.id, canEdit = mine || this.isAdmin, n = (q.questions && q.questions[0] && q.questions[0].count) || 0;
       return `<article class="qz">
         ${q.cover_url ? `<img class="cover" src="${esc(q.cover_url)}" alt="" loading="lazy">`
                       : `<div class="cover">${esc([...q.title][0] || '?')}</div>`}
-        ${q.department ? `<span class="dept" style="align-self:flex-start">${esc(q.department)}</span>` : ''}
+        <div class="row" style="gap:6px">${q.department ? `<span class="dept">${esc(q.department)}</span>` : ''}
+          <span class="vis ${q.shared ? 'shared' : ''}">${q.shared ? '👥 แชร์ทุกแผนก' : '🔒 ส่วนตัว'}</span></div>
         <h3>${esc(q.title)}</h3>
         <div class="meta">${n} ข้อ · แก้ไข ${new Date(q.updated_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
           ${mine ? '' : `<br>โดย ${esc(q.owner_email)}`}</div>
         <div class="acts">
           <button class="btn sm sun" data-play="${q.id}" ${n ? '' : 'disabled'}>▶ เริ่มเกม</button>
-          ${mine ? `<a class="btn sm light" href="#edit/${q.id}">แก้ไข</a>
-                    <button class="btn sm danger" data-del="${q.id}">ลบ</button>`
-                 : `<button class="btn sm light" data-dup="${q.id}">คัดลอกมาแก้</button>`}
+          ${canEdit ? `<a class="btn sm light" href="#edit/${q.id}">แก้ไข</a>
+                       <button class="btn sm light" data-share="${q.id}">${q.shared ? 'เลิกแชร์' : 'แชร์'}</button>
+                       <button class="btn sm danger" data-del="${q.id}">ลบ</button>` : ''}
+          ${mine ? '' : `<button class="btn sm light" data-dup="${q.id}">คัดลอกมาแก้</button>`}
         </div></article>`; }).join('')}</div>`;
     $$('[data-play]', box).forEach(b => b.onclick = () => this.play(b.dataset.play, b));
     $$('[data-del]', box).forEach(b => b.onclick = async () => {
@@ -637,10 +662,39 @@ const Admin = {
       if (error) return toast(errMsg(error), true);
       this.quizzes = this.quizzes.filter(x => x.id !== q.id); this.renderCards(); toast('ลบแล้ว');
     });
+    $$('[data-share]', box).forEach(b => b.onclick = async () => {
+      const q = this.quizzes.find(x => x.id === b.dataset.share), to = !q.shared;
+      if (to && !confirm(`แชร์ “${q.title}” ให้ทุกแผนกเห็น? (จะเห็นคำตอบด้วย)`)) return;
+      b.disabled = true;
+      const { error } = await sb.from('quizzes').update({ shared: to }).eq('id', q.id);
+      if (error) { b.disabled = false; return toast(errMsg(error), true); }
+      q.shared = to; this.renderCards(); toast(to ? 'แชร์ให้ทุกแผนกแล้ว' : 'เปลี่ยนเป็นส่วนตัวแล้ว');
+    });
     $$('[data-dup]', box).forEach(b => b.onclick = async () => {
       try { const id = await rpc('duplicate_quiz', { p_id: b.dataset.dup }); location.hash = '#edit/' + id; }
       catch (e) { toast(errMsg(e), true); }
     });
+  },
+  bindAdmins() {
+    const box = $('#admbox'), list = $('#admlist');
+    const draw = emails => {
+      list.innerHTML = emails.map(e => `<div class="it"><span class="grow">${esc(e)}${e === (this.user.email || '').toLowerCase() ? ' (คุณ)' : ''}</span>
+        <button class="btn danger sm" data-rm="${esc(e)}">นำออก</button></div>`).join('');
+      $$('[data-rm]', list).forEach(b => b.onclick = async () => {
+        if (!confirm(`นำ ${b.dataset.rm} ออกจากผู้ดูแลระบบ?`)) return;
+        try { draw(await rpc('remove_admin', { p_email: b.dataset.rm })); } catch (e) { toast(errMsg(e), true); }
+      });
+    };
+    box.addEventListener('toggle', async () => {
+      if (!box.open || list.dataset.loaded) return;
+      try { draw(await rpc('list_admins')); list.dataset.loaded = 1; } catch (e) { toast(errMsg(e), true); }
+    });
+    $('#admform').onsubmit = async ev => {
+      ev.preventDefault();
+      const inp = $('#admemail');
+      try { draw(await rpc('add_admin', { p_email: inp.value })); inp.value = ''; toast('เพิ่มผู้ดูแลแล้ว'); }
+      catch (e) { toast(errMsg(e), true); }
+    };
   },
   async play(quizId, btn) {
     if (btn) btn.disabled = true;
@@ -660,14 +714,15 @@ const Admin = {
     this.user = user;
     app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`);
     bindShell();
-    let quiz = { id: null, title: '', department: '', description: '' }, qs = [];
+    let quiz = { id: null, title: '', department: '', description: '', shared: false }, qs = [];
+    const adm = await sb.rpc('is_admin'); this.isAdmin = adm.data === true;
     if (id && id !== 'new') {
       const [a, b] = await Promise.all([
         sb.from('quizzes').select('*').eq('id', id).single(),
         sb.from('questions').select('*').eq('quiz_id', id).order('position')
       ]);
       if (a.error || !a.data) { toast('ไม่พบชุดคำถาม', true); location.hash = '#admin'; return; }
-      if (a.data.owner_id !== user.id) { toast('แก้ไขได้เฉพาะชุดคำถามของตัวเอง กด “คัดลอกมาแก้” แทน', true); location.hash = '#admin'; return; }
+      if (a.data.owner_id !== user.id && !this.isAdmin) { toast('แก้ไขได้เฉพาะชุดคำถามของตัวเอง กด “คัดลอกมาแก้” แทน', true); location.hash = '#admin'; return; }
       quiz = a.data;
       qs = (b.data || []).map(q => ({ text: q.text, image_url: q.image_url || '', time_limit: q.time_limit,
         correct_index: q.correct_index, choices: [0, 1, 2, 3].map(i => q.choices[i] || ''),
@@ -684,6 +739,7 @@ const Admin = {
     app.innerHTML = adminShell(user, `
       <div class="row"><button class="btn light sm" id="back">← กลับ</button>
         <h2 class="sec grow">${quiz.id ? 'แก้ไขชุดคำถาม' : 'สร้างชุดคำถามใหม่'}</h2></div>
+      ${quiz.id && quiz.owner_id !== user.id ? `<div class="notice">⚙ กำลังแก้ไขในฐานะผู้ดูแลระบบ · เจ้าของ: <b>${esc(quiz.owner_email)}</b></div>` : ''}
       <div class="meta-grid">
         <div class="fld"><label for="f-title">ชื่อเกม *</label>
           <input class="inp" id="f-title" maxlength="200" value="${esc(quiz.title)}" placeholder="เช่น ทดสอบความรู้ Code Gray"></div>
@@ -693,6 +749,9 @@ const Admin = {
         <div class="fld full"><label for="f-desc">คำอธิบาย (ไม่บังคับ)</label>
           <input class="inp" id="f-desc" maxlength="300" value="${esc(quiz.description)}"></div>
         <div class="fld full"><label>รูปหน้าปก (ไม่บังคับ · แนวนอนจะสวยที่สุด)</label><div class="coverfld" id="coverfld"></div></div>
+        <div class="fld full"><label class="switch"><input type="checkbox" id="f-shared" ${quiz.shared ? 'checked' : ''}>
+          แชร์ให้ทุกแผนกเห็นและนำไปเล่นได้</label>
+          <p class="hint" id="sharehint"></p></div>
       </div>
       <div id="qlist"></div>
       <button class="btn light" id="addq" style="margin-top:14px;width:100%">+ เพิ่มคำถาม</button>`) + `
@@ -702,6 +761,10 @@ const Admin = {
     bindShell();
     $('#back').onclick = () => { if (!this.dirty || confirm('ยังไม่ได้บันทึก ออกจากหน้านี้?')) { this.dirty = false; location.hash = '#admin'; } };
     ['title', 'dept', 'desc'].forEach(f => $('#f-' + f).oninput = () => this.touch());
+    const sh = () => { $('#sharehint').textContent = $('#f-shared').checked
+      ? 'พนักงานทุกคนที่ล็อกอินจะเห็นชุดนี้ (รวมคำตอบ) และกดเริ่มเกมหรือคัดลอกไปแก้ได้'
+      : 'ส่วนตัว: เห็นเฉพาะคุณและผู้ดูแลระบบ เหมาะกับแบบทดสอบที่ไม่อยากให้เห็นคำตอบก่อน'; };
+    $('#f-shared').onchange = () => { sh(); this.touch(); }; sh();
     $('#addq').onclick = () => { this.qs.push(this.blankQ()); this.touch(); this.renderQs();
       const cards = $$('.qcard'); cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
       $('textarea', cards[cards.length - 1]).focus(); };
@@ -839,7 +902,8 @@ const Admin = {
     const btns = [$('#save'), $('#saveplay')]; btns.forEach(b => b.disabled = true);
     try {
       const id = await rpc('save_quiz', { p_id: this.quiz.id, p_title: d.title, p_department: d.dept,
-                                         p_description: d.desc, p_questions: d.qs, p_cover: this.quiz.cover_url || '' });
+                                         p_description: d.desc, p_questions: d.qs, p_cover: this.quiz.cover_url || '',
+                                         p_shared: $('#f-shared').checked });
       this.quiz.id = id; this.dirty = false; this.status();
       history.replaceState(null, '', '#edit/' + id);
       if (andPlay) return this.play(id);
