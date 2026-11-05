@@ -1,0 +1,80 @@
+# Quiz Live — เกมตอบคำถามเล่นพร้อมกัน
+
+ระบบกลางให้ทุกแผนกสร้างชุดคำถามเอง แล้วเปิดเล่นพร้อมกันแบบ Kahoot
+ผู้เล่นใช้มือถือ ไม่ต้องลงแอป ไม่ต้องล็อกอิน และจอใหญ่แสดงคะแนนแบบ realtime
+
+| ไฟล์ | ใช้ทำอะไร |
+|---|---|
+| `schema.sql` | ตาราง สิทธิ์ และฟังก์ชันเกม ใช้รันใน Supabase |
+| `index.html` | หน้าเว็บทั้งหมด (ผู้เล่น / ผู้จัด / จอใหญ่) |
+| `config.js` | ค่าตั้งค่า **แก้เฉพาะไฟล์นี้** |
+| `keepalive.gs` | Apps Script กันโปรเจกต์ Supabase ถูกพัก |
+
+---
+
+## ติดตั้ง (ทำครั้งเดียว ~30 นาที)
+
+### 1. สร้างฐานข้อมูล Supabase
+1. ไปที่ supabase.com → **New project** (ตั้งชื่อเช่น `quiz-live`, Region: Singapore)
+2. เมนู **SQL Editor** → New query → วางเนื้อหา `schema.sql` ทั้งไฟล์ → **Run**
+3. เมนู **Project Settings → API** จดค่า **Project URL** และ **Publishable key** (หรือ `anon public`)
+
+> ถ้าโดเมนอีเมลไม่ใช่ `princgroup.com` ให้รันเพิ่ม:
+> `update app_config set allowed_domain = 'โดเมนของคุณ';` และแก้ `ALLOWED_DOMAIN` ใน `config.js` ให้ตรงกัน
+
+### 2. เปิดล็อกอินด้วย Google (สำหรับผู้จัดเกม)
+1. เข้า console.cloud.google.com ด้วยบัญชีบริษัท → สร้างโปรเจกต์ใหม่
+2. **Google Auth Platform** (หรือ APIs & Services → OAuth consent screen)
+   - Audience / User type: **Internal** ← จะล็อกอินได้เฉพาะบัญชีในองค์กร
+3. **Clients → Create client** → ประเภท **Web application**
+   - Authorized redirect URIs: `https://<project-ref>.supabase.co/auth/v1/callback`
+     (ดูลิงก์นี้ได้ในหน้า Supabase → Authentication → Sign In / Providers → Google)
+4. คัดลอก **Client ID** และ **Client secret**
+5. Supabase → **Authentication → Sign In / Providers → Google** → Enable → วาง Client ID / Secret → Save
+
+### 3. ขึ้นเว็บบน GitHub Pages
+1. สร้าง repo ใหม่แบบ **Public** เช่น `quiz-live`
+2. แก้ `config.js` ใส่ `SUPABASE_URL` และ `SUPABASE_ANON_KEY` จากข้อ 1
+3. อัปโหลด `index.html` และ `config.js` เข้า repo
+4. repo → **Settings → Pages** → Source: Deploy from a branch → `main` / `(root)` → Save
+5. รอ 1–2 นาที จะได้ลิงก์ `https://<ชื่อบัญชี>.github.io/quiz-live/`
+6. กลับไป Supabase → **Authentication → URL Configuration**
+   - Site URL: ลิงก์จากข้อ 5
+   - Redirect URLs: เพิ่มลิงก์เดียวกัน
+
+> Publishable / anon key เปิดเผยในหน้าเว็บได้ ปลอดภัยเพราะข้อมูลถูกคุมด้วยสิทธิ์ (RLS) ในฐานข้อมูล
+> ห้ามใส่ `service_role` / Secret key ใน `config.js` เด็ดขาด
+
+### 4. กันโปรเจกต์ถูกพัก (แพ็กเกจฟรีพักเมื่อไม่มีการใช้ 7 วัน)
+1. script.google.com → New project → วาง `keepalive.gs`
+2. ⚙ Project Settings → **Script Properties** → เพิ่ม `SUPABASE_URL` และ `SUPABASE_ANON_KEY`
+3. เลือกฟังก์ชัน `setup` → Run → อนุญาตสิทธิ์
+   ระบบจะเรียก Supabase ทุกวัน 8 โมงเช้า ถ้าล้มเหลวจะมีอีเมลแจ้ง
+
+---
+
+## วิธีใช้
+
+**ผู้จัด (แต่ละแผนก)**
+1. เปิดลิงก์เว็บ → กด “สำหรับผู้จัด” → ล็อกอิน Google ด้วยอีเมลบริษัท
+2. **+ สร้างชุดคำถามใหม่** → ใส่ชื่อเกม แผนก และคำถาม (2–4 ตัวเลือก ใส่รูปได้ ตั้งเวลาต่อข้อได้)
+   แตะตัวอักษรสี ก ข ค ง เพื่อเลือกคำตอบที่ถูก
+3. กด **บันทึกแล้วเริ่มเกม** → เปิดหน้านี้บนโปรเจกเตอร์ → กด **⛶ เต็มจอ**
+4. รอคนเข้าห้องจนครบ → **เริ่มเกม** → ระบบเฉลยเองเมื่อหมดเวลาหรือทุกคนตอบครบ
+5. จบเกมแล้วกด **ดาวน์โหลดผล (CSV)** เปิดด้วย Excel ได้
+
+- แท็บ **ทุกแผนก** ดูและเล่นชุดคำถามของแผนกอื่นได้ หรือกด **คัดลอกมาแก้** เป็นของตัวเอง
+- แก้ไข/ลบได้เฉพาะชุดคำถามของตัวเอง
+- ถ้าเผลอปิดหน้าจอใหญ่ กลับเข้าหน้าผู้จัด จะมีปุ่ม **กลับไปที่ห้อง**
+
+**ผู้เล่น**
+สแกน QR บนจอ (หรือเปิดลิงก์แล้วใส่ PIN 6 หลัก) → ใส่ชื่อ → รอเล่น
+ตอบถูกได้ 500–1,000 คะแนน ยิ่งตอบเร็วยิ่งได้มาก ถ้าเน็ตหลุดหรือรีเฟรชหน้า ระบบจะพากลับเข้าห้องเดิมเอง
+
+---
+
+## หมายเหตุทางเทคนิค
+- รองรับผู้เล่นได้หลักร้อยต่อห้อง (จำกัดไว้ 300 คน)
+- คะแนนคำนวณฝั่งฐานข้อมูล และผู้เล่นไม่เห็นคำตอบที่ถูกจนกว่าจะเฉลย
+- รูปประกอบย่อเหลือไม่เกิน 1280px ก่อนอัปโหลด (bucket `quiz-images`)
+- รัน `schema.sql` ซ้ำได้ ไม่ลบข้อมูลเดิม
