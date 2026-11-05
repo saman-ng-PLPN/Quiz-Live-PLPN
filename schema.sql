@@ -491,3 +491,171 @@ create policy quiz_images_upload on storage.objects for insert to authenticated
 drop policy if exists quiz_images_delete on storage.objects;
 create policy quiz_images_delete on storage.objects for delete to authenticated
   using (bucket_id = 'quiz-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- =====================================================================
+-- 7) v5: แบบทดสอบ Pre-test / Post-test
+--    รอบอบรม (trainings) ผูกกับชุดคำถาม 1 ชุด มี Pre และ Post เปิด/ปิดแยกกัน
+--    ผู้ทำไม่ต้องล็อกอิน ระบุตัวด้วย รหัสพนักงาน + ชื่อ + แผนก
+-- =====================================================================
+create table if not exists public.departments (
+  name text primary key check (char_length(name) between 1 and 120),
+  sort int not null default 0
+);
+
+create table if not exists public.trainings (
+  id          uuid primary key default gen_random_uuid(),
+  quiz_id     uuid references public.quizzes(id) on delete set null,
+  owner_id    uuid not null default auth.uid(),
+  owner_email text not null default coalesce(auth.jwt() ->> 'email', ''),
+  title       text not null check (char_length(title) between 1 and 200),
+  code        text not null unique,
+  pass_percent int not null default 80 check (pass_percent between 0 and 100),
+  pre_open    boolean not null default false,
+  post_open   boolean not null default false,
+  questions   jsonb not null,           -- สำเนาคำถาม ณ ตอนสร้างรอบ (มีเฉลย)
+  total       int not null,
+  cover_url   text,
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists public.test_submissions (
+  id           bigserial primary key,
+  training_id  uuid not null references public.trainings(id) on delete cascade,
+  phase        text not null check (phase in ('pre', 'post')),
+  emp_id       text not null check (char_length(emp_id) between 1 and 30),
+  full_name    text not null check (char_length(full_name) between 1 and 120),
+  department   text not null default '',
+  answers      jsonb not null,          -- ตัวเลือกที่ตอบ เรียงตามข้อ
+  score        int not null,
+  total        int not null,
+  submitted_at timestamptz not null default now(),
+  unique (training_id, phase, emp_id)
+);
+create index if not exists test_submissions_training_idx on public.test_submissions (training_id, phase);
+
+alter table public.departments      enable row level security;
+alter table public.trainings        enable row level security;
+alter table public.test_submissions enable row level security;
+revoke all on public.departments, public.trainings, public.test_submissions from anon;
+revoke all on public.departments from authenticated;
+grant select, update, delete on public.trainings to authenticated;
+grant select, delete on public.test_submissions to authenticated;
+
+drop policy if exists trainings_owner on public.trainings;
+create policy trainings_owner on public.trainings for select to authenticated
+  using (owner_id = auth.uid() or public.is_admin());
+drop policy if exists trainings_owner_upd on public.trainings;
+create policy trainings_owner_upd on public.trainings for update to authenticated
+  using (owner_id = auth.uid() or public.is_admin()) with check (owner_id = auth.uid() or public.is_admin());
+drop policy if exists trainings_owner_del on public.trainings;
+create policy trainings_owner_del on public.trainings for delete to authenticated
+  using (owner_id = auth.uid() or public.is_admin());
+
+drop policy if exists submissions_owner on public.test_submissions;
+create policy submissions_owner on public.test_submissions for select to authenticated
+  using (exists (select 1 from public.trainings t where t.id = training_id));
+drop policy if exists submissions_owner_del on public.test_submissions;
+create policy submissions_owner_del on public.test_submissions for delete to authenticated
+  using (exists (select 1 from public.trainings t where t.id = training_id));
+
+-- รายชื่อแผนก (ทุกคนอ่านได้ / ผู้ดูแลแก้ได้)
+create or replace function public.list_departments()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(name order by sort, name), '[]'::jsonb) from departments
+$$;
+create or replace function public.set_departments(p_names jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  delete from departments;
+  insert into departments (name, sort)
+  select distinct on (trim(n)) trim(n), min(ord) over (partition by trim(n))
+    from jsonb_array_elements_text(coalesce(p_names, '[]'::jsonb)) with ordinality as t(n, ord)
+   where trim(n) <> '';
+  return public.list_departments();
+end $$;
+
+-- สร้างรอบอบรมจากชุดคำถาม (สิทธิ์เหมือนการเปิดห้องเกม)
+create or replace function public.create_training(p_quiz_id uuid, p_title text, p_pass int default 80)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_quiz quizzes; v_qs jsonb; v_n int; v_code text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into v_quiz from quizzes where id = p_quiz_id;
+  if v_quiz.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  if not (v_quiz.owner_id = auth.uid() or v_quiz.shared or public.is_admin()) then
+    raise exception 'ชุดคำถามนี้เป็นแบบส่วนตัว';
+  end if;
+  select jsonb_agg(jsonb_build_object(
+           'text', text, 'image_url', image_url, 'choices', choices, 'correct', correct_index,
+           'colors', colors, 'images', choice_images) order by position), count(*)
+    into v_qs, v_n from questions where quiz_id = p_quiz_id;
+  if v_n = 0 then raise exception 'ชุดคำถามนี้ยังไม่มีคำถาม'; end if;
+  loop
+    v_code := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from trainings where code = v_code);
+    i := i + 1; if i > 50 then raise exception 'สร้างรหัสไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+  insert into trainings (quiz_id, title, code, pass_percent, questions, total, cover_url)
+  values (p_quiz_id, left(coalesce(nullif(trim(p_title), ''), v_quiz.title), 200), v_code,
+          least(100, greatest(0, coalesce(p_pass, 80))), v_qs, v_n, v_quiz.cover_url)
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'code', v_code);
+end $$;
+
+-- ข้อมูลแบบทดสอบสำหรับผู้ทำ (ไม่มีเฉลย / ส่งคำถามเฉพาะตอนเปิดอยู่)
+create or replace function public.test_info(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  return jsonb_build_object(
+    'title', t.title, 'cover_url', t.cover_url, 'total', t.total,
+    'pre_open', t.pre_open, 'post_open', t.post_open, 'pass_percent', t.pass_percent,
+    'departments', public.list_departments(),
+    'questions', case when t.pre_open or t.post_open then
+      (select jsonb_agg(jsonb_build_object('text', q ->> 'text', 'image_url', q ->> 'image_url',
+              'choices', q -> 'choices', 'colors', q -> 'colors', 'images', q -> 'images') order by o)
+         from jsonb_array_elements(t.questions) with ordinality as x(q, o)) end);
+end $$;
+
+create or replace function public.submit_test(
+  p_code text, p_phase text, p_emp_id text, p_name text, p_dept text, p_answers jsonb
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; v_score int := 0; i int; v_ans int; v_pre test_submissions;
+        v_emp text := upper(trim(coalesce(p_emp_id, ''))); v_name text := trim(coalesce(p_name, ''));
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้'; end if;
+  if p_phase not in ('pre', 'post') then raise exception 'ระบุ Pre หรือ Post'; end if;
+  if (p_phase = 'pre' and not t.pre_open) or (p_phase = 'post' and not t.post_open) then
+    raise exception 'แบบทดสอบ %-test ปิดรับแล้ว', initcap(p_phase);
+  end if;
+  if v_emp = '' or v_name = '' then raise exception 'กรุณากรอกรหัสพนักงานและชื่อ-สกุล'; end if;
+  if jsonb_typeof(p_answers) <> 'array' or jsonb_array_length(p_answers) <> t.total then
+    raise exception 'กรุณาตอบให้ครบทุกข้อ';
+  end if;
+  for i in 0 .. t.total - 1 loop
+    if jsonb_typeof(p_answers -> i) <> 'number' then raise exception 'กรุณาตอบให้ครบทุกข้อ'; end if;
+    v_ans := (p_answers ->> i)::int;
+    if v_ans = (t.questions -> i ->> 'correct')::int then v_score := v_score + 1; end if;
+  end loop;
+  begin
+    insert into test_submissions (training_id, phase, emp_id, full_name, department, answers, score, total)
+    values (t.id, p_phase, v_emp, left(v_name, 120), left(trim(coalesce(p_dept, '')), 120), p_answers, v_score, t.total);
+  exception when unique_violation then
+    raise exception 'รหัสพนักงาน % ส่ง %-test ของรอบนี้ไปแล้ว', v_emp, initcap(p_phase);
+  end;
+  if p_phase = 'pre' then return jsonb_build_object('ok', true, 'phase', 'pre'); end if;
+  select * into v_pre from test_submissions where training_id = t.id and phase = 'pre' and emp_id = v_emp;
+  return jsonb_build_object('ok', true, 'phase', 'post', 'score', v_score, 'total', t.total,
+    'percent', round(100.0 * v_score / t.total), 'pass', 100.0 * v_score / t.total >= t.pass_percent,
+    'pass_percent', t.pass_percent, 'pre_score', v_pre.score,
+    'correct', (select jsonb_agg((q ->> 'correct')::int order by o) from jsonb_array_elements(t.questions) with ordinality x(q, o)));
+end $$;
+
+revoke execute on function public.set_departments(jsonb), public.create_training(uuid, text, int) from public, anon;
+grant execute on function public.set_departments(jsonb), public.create_training(uuid, text, int) to authenticated;
+grant execute on function public.list_departments(), public.test_info(text),
+                          public.submit_test(text, text, text, text, text, jsonb) to anon, authenticated;

@@ -160,6 +160,68 @@ textarea.inp{resize:vertical;min-height:62px}
   border-top:1px solid var(--line);z-index:6}
 .savebar .in{max-width:980px;margin:auto;display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));align-items:center}
 .savebar .st{font-size:13px;color:var(--muted)}
+/* v6: Pre/Post Test */
+body.test{background:#eef2f6;color:var(--ink)}
+.tst{max-width:640px;margin:auto;padding:16px 16px calc(110px + env(safe-area-inset-bottom))}
+.tst-head{background:var(--navy);color:#fff;border-radius:18px;padding:18px;display:grid;gap:8px}
+.tst-head .brand{font-size:22px}
+.tst-head h1{margin:0;font-size:22px;line-height:1.3}
+.tst-head img{width:100%;max-height:180px;object-fit:cover;border-radius:12px}
+.phase{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:3px 10px;border-radius:99px;background:#e9eef3;color:var(--muted)}
+.phase.open{background:#dff3e8;color:#1b6b42}
+.phase.pre{background:#e3efff;color:#1f5ea8} .phase.post{background:#fff1d6;color:#8a5a00}
+.tcard{background:#fff;border-radius:16px;padding:16px;margin-top:14px;box-shadow:0 1px 3px rgba(0,0,0,.06);display:grid;gap:10px}
+.tcard .fld label{color:var(--muted)}
+.seg{display:flex;gap:8px}
+.seg label{flex:1;border:2px solid var(--line);border-radius:12px;padding:10px;text-align:center;font-weight:600;cursor:pointer}
+.seg input{display:none}
+.seg label:has(input:checked){border-color:var(--navy3);background:#eef4f9}
+.seg label:has(input:disabled){opacity:.4;cursor:default}
+.tq{background:#fff;border-radius:16px;padding:14px;margin-top:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);display:grid;gap:10px;scroll-margin-top:70px}
+.tq .qn{font-size:13px;color:var(--muted);font-weight:600}
+.tq h3{margin:0;font-size:18px;line-height:1.4}
+.tq .qimg{max-width:100%;max-height:240px;border-radius:10px;justify-self:center;object-fit:contain}
+.tq .opts2{display:grid;gap:8px}
+.tq .opts2.imgs{grid-template-columns:1fr 1fr}
+.tch{display:flex;align-items:center;gap:10px;border:2px solid var(--line);border-radius:12px;padding:8px;background:#fff;text-align:left;font-size:16px;width:100%}
+.tch b{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex:none;font-size:17px}
+.tch .cbody{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+.tch .cimg{max-height:120px;border-radius:8px;align-self:flex-start}
+.tch.on{border-color:var(--navy3);background:#eaf2fa;box-shadow:inset 0 0 0 1px var(--navy3)}
+.tch.right{border-color:var(--good);background:#eaf8f0}
+.tch.wrong{border-color:var(--bad);background:#fdecec}
+.tch .mk{margin-left:auto;font-weight:700}
+.tbar2{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);z-index:6}
+.tbar2 .in{max-width:640px;margin:auto;display:flex;gap:10px;align-items:center;padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+.tbar2 .prog{flex:1;font-size:14px;color:var(--muted)}
+.tbar2 .prog i{display:block;height:6px;border-radius:99px;background:#e3e8ee;margin-top:5px;overflow:hidden}
+.tbar2 .prog i span{display:block;height:100%;background:var(--good);transition:width .2s}
+.score-big{font-size:64px;font-weight:800;line-height:1;text-align:center}
+.score-big small{font-size:24px;color:var(--muted);font-weight:600}
+.passbadge{justify-self:center;padding:6px 18px;border-radius:99px;font-weight:700}
+.passbadge.ok{background:#dff3e8;color:#1b6b42} .passbadge.no{background:#fde4e4;color:#9b2c2c}
+/* จัดการรอบ + รายงาน */
+.trow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.linkbox{display:flex;align-items:center;gap:8px;background:#f3f6f9;border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-weight:600;word-break:break-all}
+.tiles4{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.stile{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+.stile small{display:block;color:var(--muted);font-size:13px}
+.stile strong{font-size:26px}
+.stile em{font-style:normal;font-size:13px;color:var(--muted)}
+.tblwrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
+table.rep{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+table.rep th,table.rep td{padding:8px 10px;border-bottom:1px solid #eef0f3;text-align:left;white-space:nowrap}
+table.rep th{background:#f6f8fa;font-weight:600;position:sticky;top:0}
+table.rep td.num,table.rep th.num{text-align:right}
+table.rep tr.low td{background:#fff5f5}
+.up{color:var(--good);font-weight:700} .down{color:var(--bad);font-weight:700}
+.xbtn{border:0;background:none;color:#b9c1ca;padding:0 4px;font-size:13px}
+.xbtn:hover{color:var(--bad)}
+.qroverlay{position:fixed;inset:0;background:var(--navy);color:#fff;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2vh;padding:3vh}
+.qroverlay .qrbox{width:min(70vh,90vw)}
+.qroverlay h1{margin:0;font-size:clamp(24px,3.4vw,52px);text-align:center}
+.qroverlay .url{font-size:clamp(22px,3vw,44px);font-weight:700;color:var(--sun2)}
+.qroverlay .code{font-size:clamp(18px,2vw,30px);opacity:.85}
 /* v5: รูปประจำตัว */
 .avwrap{position:relative;display:inline-block;line-height:0}
 .avwrap .av.xl{width:132px;height:132px}
@@ -407,6 +469,7 @@ function route() {
   if (page === 'admin') return Admin.list();
   if (page === 'edit') return Admin.edit(arg);
   if (page === 'host') return Host.open(arg);
+  if (page === 'training') return Training.open(arg);
   return Player.start();
 }
 
@@ -467,6 +530,8 @@ const Player = {
   KEY: 'quizlive.player',
   start() {
     setBody('player');
+    const tcode = (new URLSearchParams(location.search).get('t') || '').replace(/\D/g, '').slice(0, 6);
+    if (tcode) return Test.start(tcode);
     const pin = (new URLSearchParams(location.search).get('pin') || '').replace(/\D/g, '').slice(0, 6);
     const saved = load(this.KEY);
     if (saved && saved.player_id && (!pin || pin === saved.pin)) return this.enter(saved);
@@ -652,6 +717,9 @@ const Admin = {
     ]);
     if (qz.error) { toast(errMsg(qz.error), true); return; }
     this.isAdmin = adm.data === true;
+    const tr = await sb.from('trainings').select('id,title,code,pre_open,post_open,created_at,owner_id,owner_email')
+      .order('created_at', { ascending: false }).limit(30);
+    this.trainings = tr.data || [];
     this.quizzes = qz.data || [];
     this.live = live.data || [];
     this.renderList();
@@ -666,6 +734,11 @@ const Admin = {
       <div class="row"><h2 class="sec grow">ชุดคำถาม</h2>
         <a class="btn sun" href="#edit/new">+ สร้างชุดคำถามใหม่</a></div>
       ${liveHTML}
+      ${this.trainings.length ? `<div class="live" style="background:#eef6ff;border-color:#c9def5"><b>📝 รอบ Pre/Post Test</b>${this.trainings.map(t => `
+        <div class="it" style="border-color:#c9def5"><span class="grow">${esc(t.title)} · รหัส <b>${esc(t.code)}</b>
+          ${t.pre_open ? '<span class="phase open">Pre เปิด</span>' : ''}${t.post_open ? '<span class="phase open">Post เปิด</span>' : ''}
+          ${t.owner_id !== u.id ? `<span class="hint">· ${esc(t.owner_email)}</span>` : ''}</span>
+          <a class="btn sm" href="#training/${t.id}">จัดการ / ดูผล</a></div>`).join('')}</div>` : ''}
       <div class="row" style="margin-top:16px">
         <div class="tabs"><button data-tab="mine">ของฉัน</button><button data-tab="all">${this.isAdmin ? 'ของคนอื่นทั้งหมด (ผู้ดูแล)' : 'แชร์จากทุกแผนก'}</button></div>
         <span class="grow"></span>
@@ -676,7 +749,13 @@ const Admin = {
         <div id="admlist"></div>
         <form class="row" id="admform" style="padding:10px 0 14px">
           <input class="inp grow" id="admemail" type="email" placeholder="อีเมล @${esc(CFG.ALLOWED_DOMAIN || '')}" style="min-width:0">
-          <button class="btn sm">+ เพิ่ม</button></form></details>` : ''}`);
+          <button class="btn sm">+ เพิ่ม</button></form>
+        <div style="border-top:1px solid var(--line);padding:12px 0 16px;display:grid;gap:8px">
+          <b>รายชื่อแผนก (ใช้ในแบบทดสอบ Pre/Post)</b>
+          <p class="hint">พิมพ์ 1 แผนกต่อ 1 บรรทัด เรียงตามลำดับที่ต้องการแสดง</p>
+          <textarea class="inp" id="deptlist" rows="8" placeholder="เช่น&#10;ห้องฉุกเฉิน (ER)&#10;ผู้ป่วยนอก (OPD)&#10;เทคโนโลยีสารสนเทศ (IT)"></textarea>
+          <div class="row"><span class="hint grow" id="deptcount"></span><button class="btn sm" id="deptsave">บันทึกรายชื่อแผนก</button></div>
+        </div></details>` : ''}`);
     bindShell();
     if (this.isAdmin) this.bindAdmins();
     $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === this.tab);
@@ -711,6 +790,7 @@ const Admin = {
           ${mine ? '' : `<br>โดย ${esc(q.owner_email)}`}</div>
         <div class="acts">
           <button class="btn sm sun" data-play="${q.id}" ${n ? '' : 'disabled'}>▶ เริ่มเกม</button>
+          <button class="btn sm light" data-test="${q.id}" ${n ? '' : 'disabled'} title="สร้างรอบแบบทดสอบก่อน-หลังอบรม">📝 Pre/Post</button>
           ${canEdit ? `<a class="btn sm light" href="#edit/${q.id}">แก้ไข</a>
                        <button class="btn sm light" data-share="${q.id}">${q.shared ? 'เลิกแชร์' : 'แชร์'}</button>
                        <button class="btn sm danger" data-del="${q.id}">ลบ</button>` : ''}
@@ -723,6 +803,16 @@ const Admin = {
       const { error } = await sb.from('quizzes').delete().eq('id', q.id);
       if (error) return toast(errMsg(error), true);
       this.quizzes = this.quizzes.filter(x => x.id !== q.id); this.renderCards(); toast('ลบแล้ว');
+    });
+    $$('[data-test]', box).forEach(b => b.onclick = async () => {
+      const q = this.quizzes.find(x => x.id === b.dataset.test);
+      const title = prompt('ชื่อรอบอบรม (เช่น ระบุวันที่/รอบ)', `${q.title} ${new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}`);
+      if (title === null) return;
+      const pass = prompt('เกณฑ์ผ่าน Post-test (%)', '80'); if (pass === null) return;
+      b.disabled = true;
+      try { const r = await rpc('create_training', { p_quiz_id: q.id, p_title: title, p_pass: Math.max(0, Math.min(100, parseInt(pass, 10) || 80)) });
+        location.hash = '#training/' + r.id; }
+      catch (e) { toast(errMsg(e), true); b.disabled = false; }
     });
     $$('[data-share]', box).forEach(b => b.onclick = async () => {
       const q = this.quizzes.find(x => x.id === b.dataset.share), to = !q.shared;
@@ -747,10 +837,18 @@ const Admin = {
         try { draw(await rpc('remove_admin', { p_email: b.dataset.rm })); } catch (e) { toast(errMsg(e), true); }
       });
     };
+    const dl = $('#deptlist'), dc = () => { $('#deptcount').textContent = `${dl.value.split('\n').filter(x => x.trim()).length} แผนก`; };
+    dl.oninput = dc;
     box.addEventListener('toggle', async () => {
       if (!box.open || list.dataset.loaded) return;
-      try { draw(await rpc('list_admins')); list.dataset.loaded = 1; } catch (e) { toast(errMsg(e), true); }
+      try { draw(await rpc('list_admins')); list.dataset.loaded = 1;
+            dl.value = (await rpc('list_departments')).join('\n'); dc(); } catch (e) { toast(errMsg(e), true); }
     });
+    $('#deptsave').onclick = async () => {
+      try { const r = await rpc('set_departments', { p_names: dl.value.split('\n').map(x => x.trim()).filter(Boolean) });
+            dl.value = r.join('\n'); dc(); toast(`บันทึกแล้ว ${r.length} แผนก`); }
+      catch (e) { toast(errMsg(e), true); }
+    };
     $('#admform').onsubmit = async ev => {
       ev.preventDefault();
       const inp = $('#admemail');
@@ -1238,6 +1336,308 @@ const Host = {
     document.body.appendChild(a); a.click(); a.remove();
   }
 };
+
+// =====================================================================
+// แบบทดสอบ Pre-test / Post-test — ฝั่งผู้ทำ (มือถือ ไม่ต้องล็อกอิน)  ลิงก์: ?t=รหัส 6 หลัก
+// =====================================================================
+const PHASE_TH = { pre: 'Pre-test (ก่อนอบรม)', post: 'Post-test (หลังอบรม)' };
+const Test = {
+  async start(code) {
+    setBody('player test');
+    this.code = code;
+    app.innerHTML = `<div class="center-msg"><div class="spinner"></div></div>`;
+    try { this.info = await rpc('test_info', { p_code: code }); }
+    catch (e) {
+      app.innerHTML = `<div class="center-msg"><div class="box"><h2>${esc(errMsg(e))}</h2>
+        <a class="btn" href="./">กลับหน้าแรก</a></div></div>`;
+      return;
+    }
+    this.intro();
+  },
+  head() {
+    const i = this.info;
+    return `<header class="tst-head"><div class="brand">${brandHTML()}</div>
+      ${i.cover_url ? `<img src="${esc(i.cover_url)}" alt="">` : ''}
+      <h1>${esc(i.title)}</h1>
+      <div class="row" style="gap:6px"><span class="phase ${i.pre_open ? 'open' : ''}">${i.pre_open ? '●' : '○'} Pre-test ${i.pre_open ? 'เปิดรับ' : 'ปิด'}</span>
+        <span class="phase ${i.post_open ? 'open' : ''}">${i.post_open ? '●' : '○'} Post-test ${i.post_open ? 'เปิดรับ' : 'ปิด'}</span>
+        <span class="phase">${i.total} ข้อ</span></div></header>`;
+  },
+  intro() {
+    const i = this.info, me = load('quizlive.tester') || {};
+    if (!i.pre_open && !i.post_open) {
+      app.innerHTML = `<main class="tst">${this.head()}<div class="tcard" style="text-align:center">
+        <p style="margin:0">ยังไม่เปิดรับแบบทดสอบ<br>รอผู้จัดเปิดแล้วกดรีเฟรช</p>
+        <button class="btn" id="rf">รีเฟรช</button></div></main>`;
+      $('#rf').onclick = () => this.start(this.code);
+      return;
+    }
+    const phase = i.pre_open && !i.post_open ? 'pre' : !i.pre_open && i.post_open ? 'post' : (me.lastPre === this.code ? 'post' : 'pre');
+    const depts = i.departments || [];
+    app.innerHTML = `<main class="tst">${this.head()}
+      <form class="tcard" id="tf" autocomplete="off">
+        <div class="seg">${['pre', 'post'].map(ph => `<label><input type="radio" name="ph" value="${ph}" ${ph === phase ? 'checked' : ''}
+          ${i[ph + '_open'] ? '' : 'disabled'}>${ph === 'pre' ? 'Pre-test<br><small>ก่อนอบรม</small>' : 'Post-test<br><small>หลังอบรม</small>'}</label>`).join('')}</div>
+        <div class="fld"><label for="t-emp">รหัสพนักงาน *</label><input class="inp" id="t-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters"></div>
+        <div class="fld"><label for="t-name">ชื่อ-นามสกุล *</label><input class="inp" id="t-name" maxlength="120" value="${esc(me.name || '')}"></div>
+        <div class="fld"><label for="t-dept">แผนก *</label>${depts.length
+          ? `<select class="inp" id="t-dept"><option value="">— เลือกแผนก —</option>${depts.map(d => `<option ${d === me.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>`
+          : `<input class="inp" id="t-dept" maxlength="120" value="${esc(me.dept || '')}">`}</div>
+        <button class="btn sun lg">เริ่มทำแบบทดสอบ</button>
+        <p class="hint" style="text-align:center">ตอบให้ครบทุกข้อแล้วกดส่ง · ส่งได้ครั้งเดียวต่อรอบ</p>
+      </form></main>`;
+    $('#tf').onsubmit = ev => {
+      ev.preventDefault();
+      const who = { emp_id: $('#t-emp').value.trim().toUpperCase(), name: $('#t-name').value.trim(), dept: $('#t-dept').value.trim() };
+      if (!who.emp_id || !who.name || !who.dept) return toast('กรุณากรอกรหัสพนักงาน ชื่อ และแผนกให้ครบ', true);
+      save('quizlive.tester', { ...me, ...who });
+      this.who = who; this.phase = $('input[name=ph]:checked').value;
+      this.questions();
+    };
+  },
+  draftKey() { return `quizlive.draft.${this.code}.${this.phase}.${this.who.emp_id}`; },
+  questions() {
+    const qs = this.info.questions || [];
+    this.ans = load(this.draftKey()) || qs.map(() => null);
+    if (this.ans.length !== qs.length) this.ans = qs.map(() => null);
+    app.innerHTML = `<main class="tst">
+      <div class="row" style="justify-content:space-between"><span class="phase ${this.phase}">${PHASE_TH[this.phase]}</span>
+        <span class="hint">${esc(this.who.name)} · ${esc(this.who.dept)}</span></div>
+      ${qs.map((q, n) => `<section class="tq" id="tq${n}"><div class="qn">ข้อ ${n + 1} / ${qs.length}</div>
+        <h3>${esc(q.text)}</h3>${q.image_url ? `<img class="qimg" src="${esc(q.image_url)}" alt="">` : ''}
+        <div class="opts2 ${hasImgs(q.images) ? 'imgs' : ''}">${q.choices.map((c, i) =>
+          `<button type="button" class="tch" data-q="${n}" data-i="${i}"><b style="${chipStyle(q.colors, i)}">${LETTERS[i]}</b>${choiceBody(c, imgAt(q.images, i))}</button>`).join('')}</div>
+      </section>`).join('')}</main>
+      <div class="tbar2"><div class="in"><div class="prog" id="prog"></div><button class="btn sun" id="send">ส่งคำตอบ</button></div></div>`;
+    app.onclick = e => {
+      const b = e.target.closest('.tch[data-q]'); if (!b) return;
+      this.ans[+b.dataset.q] = +b.dataset.i; save(this.draftKey(), this.ans); this.mark();
+    };
+    $('#send').onclick = () => this.send();
+    onLeave(() => { app.onclick = null; });
+    this.mark();
+  },
+  mark() {
+    $$('.tch[data-q]').forEach(b => b.classList.toggle('on', this.ans[+b.dataset.q] === +b.dataset.i));
+    const done = this.ans.filter(a => a !== null).length, n = this.ans.length;
+    $('#prog').innerHTML = `ตอบแล้ว <b>${done}</b> / ${n}<i><span style="width:${100 * done / n}%"></span></i>`;
+  },
+  async send() {
+    const miss = this.ans.findIndex(a => a === null);
+    if (miss >= 0) { toast(`ยังไม่ได้ตอบข้อ ${miss + 1}`, true); $('#tq' + miss).scrollIntoView({ behavior: 'smooth' }); return; }
+    if (!confirm(`ส่งคำตอบ ${PHASE_TH[this.phase]}? ส่งแล้วแก้ไขไม่ได้`)) return;
+    const b = $('#send'); b.disabled = true; b.textContent = 'กำลังส่ง…';
+    try {
+      const r = await rpc('submit_test', { p_code: this.code, p_phase: this.phase, p_emp_id: this.who.emp_id,
+        p_name: this.who.name, p_dept: this.who.dept, p_answers: this.ans });
+      save(this.draftKey());
+      if (this.phase === 'pre') save('quizlive.tester', { ...(load('quizlive.tester') || {}), lastPre: this.code });
+      this.result(r);
+    } catch (e) { toast(errMsg(e), true); b.disabled = false; b.textContent = 'ส่งคำตอบ'; }
+  },
+  result(r) {
+    window.scrollTo(0, 0);
+    if (r.phase === 'pre') {
+      app.innerHTML = `<main class="tst">${this.head()}<div class="tcard" style="text-align:center">
+        <div style="font-size:56px">✅</div><h2 style="margin:0">ส่ง Pre-test เรียบร้อย</h2>
+        <p style="margin:0;color:var(--muted)">ขอบคุณครับ หลังอบรมเสร็จ สแกน QR เดิม (หรือเปิดลิงก์เดิม) เพื่อทำ Post-test</p></div></main>`;
+      return;
+    }
+    const qs = this.info.questions, diff = r.pre_score == null ? null : r.score - r.pre_score;
+    app.innerHTML = `<main class="tst">${this.head()}
+      <div class="tcard"><div class="score-big">${r.score}<small> / ${r.total}</small></div>
+        <div style="text-align:center;font-size:20px;font-weight:600">${r.percent}%</div>
+        <span class="passbadge ${r.pass ? 'ok' : 'no'}">${r.pass ? '🎉 ผ่านเกณฑ์' : 'ยังไม่ผ่านเกณฑ์'} (${r.pass_percent}%)</span>
+        ${diff == null ? '' : `<p style="margin:0;text-align:center">ก่อนอบรม ${r.pre_score} → หลังอบรม ${r.score}
+          <span class="${diff >= 0 ? 'up' : 'down'}">(${diff >= 0 ? '+' : ''}${diff})</span></p>`}</div>
+      <h3 style="margin:18px 4px 0">เฉลย</h3>
+      ${qs.map((q, n) => { const my = this.ans[n], ok = r.correct[n];
+        return `<section class="tq"><div class="qn">ข้อ ${n + 1} ${my === ok ? '<span class="up">✓ ถูก</span>' : '<span class="down">✗ ผิด</span>'}</div>
+        <h3>${esc(q.text)}</h3>
+        <div class="opts2 ${hasImgs(q.images) ? 'imgs' : ''}">${q.choices.map((c, i) => (i === ok || i === my) ?
+          `<div class="tch ${i === ok ? 'right' : 'wrong'}"><b style="${chipStyle(q.colors, i)}">${LETTERS[i]}</b>${choiceBody(c, imgAt(q.images, i))}
+            <span class="mk">${i === ok ? '✓ เฉลย' : 'คุณตอบ'}</span></div>` : '').join('')}</div></section>`; }).join('')}
+      </main>`;
+  }
+};
+
+// =====================================================================
+// จัดการรอบ Pre/Post + รายงาน (ผู้จัด)
+// =====================================================================
+const Training = {
+  async open(id) {
+    setBody('admin');
+    const user = await requireStaff(); if (!user) return;
+    this.user = user; this.id = id; this.tab = this.tab || 'sum'; this.q = '';
+    app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`); bindShell();
+    const { data: t, error } = await sb.from('trainings').select('*').eq('id', id).single();
+    if (error || !t) { toast('ไม่พบรอบนี้ หรือไม่มีสิทธิ์', true); location.hash = '#admin'; return; }
+    this.t = t;
+    await this.loadSubs();
+    this.render();
+    const poll = setInterval(async () => { const n = this.subs.length; await this.loadSubs(); if (this.subs.length !== n) this.renderBody(); }, 8000);
+    onLeave(() => clearInterval(poll));
+  },
+  async loadSubs() {
+    const { data } = await sb.from('test_submissions').select('*').eq('training_id', this.id).order('submitted_at');
+    if (data) this.subs = data;
+  },
+  link() { return Host.joinBase() + '?t=' + this.t.code; },
+  render() {
+    const t = this.t;
+    app.innerHTML = adminShell(this.user, `
+      <div class="row"><a class="btn light sm" href="#admin">← กลับ</a><h2 class="sec grow">${esc(t.title)}</h2></div>
+      <div class="tcard">
+        <div class="trow"><span class="phase">รหัส ${esc(t.code)}</span><span class="hint">${t.total} ข้อ · เกณฑ์ผ่าน</span>
+          <input class="inp" id="pass" type="number" min="0" max="100" value="${t.pass_percent}" style="width:80px;padding:6px 8px"> %</div>
+        <div class="linkbox"><span class="grow">${esc(this.link().replace(/^https?:\/\//, ''))}</span>
+          <button class="btn light sm" id="copy">คัดลอก</button><button class="btn sm" id="bigqr">แสดง QR เต็มจอ</button></div>
+        <label class="switch"><input type="checkbox" id="sw-pre" ${t.pre_open ? 'checked' : ''}> <span>รับคำตอบ <b>Pre-test</b> (ก่อนอบรม)</span></label>
+        <label class="switch"><input type="checkbox" id="sw-post" ${t.post_open ? 'checked' : ''}> <span>รับคำตอบ <b>Post-test</b> (หลังอบรม)</span></label>
+        <p class="hint">ใช้ลิงก์/QR เดียวกันทั้งก่อนและหลังอบรม ระบบเลือก Pre หรือ Post ให้ตามที่เปิดไว้</p>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <div class="tabs">${[['sum', 'ภาพรวม'], ['people', 'รายคน'], ['dept', 'รายแผนก'], ['items', 'รายข้อ']].map(([k, v]) =>
+          `<button data-tab="${k}" class="${this.tab === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+        <span class="grow"></span><button class="btn light sm" id="xls">⬇ ส่งออก Excel</button></div>
+      <div id="tbody" style="margin-top:12px"></div>
+      <div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="deltr">ลบรอบนี้</button></div>`);
+    bindShell();
+    $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(this.link()); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(this.link()); } };
+    $('#bigqr').onclick = () => this.bigQR();
+    const upd = async (patch, el) => {
+      const { error } = await sb.from('trainings').update(patch).eq('id', this.id);
+      if (error) { toast(errMsg(error), true); if (el) el.checked = !el.checked; return; }
+      Object.assign(this.t, patch); toast('บันทึกแล้ว');
+    };
+    $('#sw-pre').onchange = e => upd({ pre_open: e.target.checked }, e.target);
+    $('#sw-post').onchange = e => upd({ post_open: e.target.checked }, e.target);
+    $('#pass').onchange = e => { const v = Math.max(0, Math.min(100, +e.target.value || 0)); e.target.value = v; upd({ pass_percent: v }).then(() => this.renderBody()); };
+    $$('[data-tab]').forEach(b => b.onclick = () => { this.tab = b.dataset.tab; $$('[data-tab]').forEach(x => x.classList.toggle('on', x === b)); this.renderBody(); });
+    $('#xls').onclick = () => this.excel();
+    $('#deltr').onclick = async () => {
+      if (!confirm(`ลบรอบ “${t.title}” และผลแบบทดสอบทั้งหมด? กู้คืนไม่ได้`)) return;
+      const { error } = await sb.from('trainings').delete().eq('id', this.id);
+      if (error) return toast(errMsg(error), true);
+      location.hash = '#admin';
+    };
+    this.renderBody();
+  },
+  // ---------- คำนวณรายงาน ----------
+  calc() {
+    const t = this.t, pass = t.pass_percent, pct = s => s ? Math.round(100 * s.score / s.total) : null;
+    const people = new Map();
+    for (const s of this.subs) {
+      const p = people.get(s.emp_id) || { emp_id: s.emp_id, name: s.full_name, dept: s.department };
+      p[s.phase] = s; if (s.phase === 'post' || !p.name) { p.name = s.full_name; p.dept = s.department; }
+      people.set(s.emp_id, p);
+    }
+    const rows = [...people.values()].map(p => ({ ...p, prePct: pct(p.pre), postPct: pct(p.post),
+      passed: p.post ? pct(p.post) >= pass : null }))
+      .sort((a, b) => a.dept.localeCompare(b.dept, 'th') || a.name.localeCompare(b.name, 'th'));
+    const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null;
+    const pres = rows.filter(r => r.pre), posts = rows.filter(r => r.post), both = rows.filter(r => r.pre && r.post);
+    const depts = [...new Set(rows.map(r => r.dept))].map(d => {
+      const rs = rows.filter(r => r.dept === d), po = rs.filter(r => r.post);
+      return { dept: d || '(ไม่ระบุ)', n: rs.length, pre: avg(rs.filter(r => r.pre).map(r => r.prePct)),
+               post: avg(po.map(r => r.postPct)), passN: po.filter(r => r.passed).length, postN: po.length };
+    });
+    const items = t.questions.map((q, i) => {
+      const f = ph => { const ss = this.subs.filter(s => s.phase === ph); if (!ss.length) return { pct: null, top: null };
+        const cnt = q.choices.map(() => 0); ss.forEach(s => { const a = s.answers[i]; if (cnt[a] !== undefined) cnt[a]++; });
+        let wrong = -1; cnt.forEach((c, k) => { if (k !== q.correct && c > 0 && (wrong < 0 || c > cnt[wrong])) wrong = k; });
+        return { pct: Math.round(100 * cnt[q.correct] / ss.length), wrong, wrongN: wrong >= 0 ? cnt[wrong] : 0 }; };
+      return { n: i + 1, text: q.text, correct: q.correct, choices: q.choices, pre: f('pre'), post: f('post') };
+    });
+    return { rows, pres, posts, both, depts, items, avg,
+      preAvg: avg(pres.map(r => r.prePct)), postAvg: avg(posts.map(r => r.postPct)),
+      gain: both.length ? avg(both.map(r => r.postPct - r.prePct)) : null,
+      passN: posts.filter(r => r.passed).length };
+  },
+  renderBody() {
+    const box = $('#tbody'); if (!box) return;
+    const c = this.calc(), dash = v => v == null ? '–' : v, sgn = v => v == null ? '–' : `<span class="${v >= 0 ? 'up' : 'down'}">${v >= 0 ? '+' : ''}${v}</span>`;
+    if (this.tab === 'sum') {
+      box.innerHTML = `<div class="tiles4">
+        <div class="stile"><small>ทำ Pre-test</small><strong>${c.pres.length}</strong> <em>คน</em></div>
+        <div class="stile"><small>ทำ Post-test</small><strong>${c.posts.length}</strong> <em>คน</em></div>
+        <div class="stile"><small>ทำครบทั้ง 2 ครั้ง</small><strong>${c.both.length}</strong> <em>คน</em></div>
+        <div class="stile"><small>คะแนนเฉลี่ย Pre</small><strong>${dash(c.preAvg)}</strong><em>%</em></div>
+        <div class="stile"><small>คะแนนเฉลี่ย Post</small><strong>${dash(c.postAvg)}</strong><em>%</em></div>
+        <div class="stile"><small>เพิ่มขึ้นเฉลี่ย (คนที่ทำครบ)</small><strong>${sgn(c.gain)}</strong><em>%</em></div>
+        <div class="stile"><small>ผ่านเกณฑ์ ${this.t.pass_percent}% (Post)</small><strong>${c.passN}</strong> <em>/ ${c.posts.length} คน${c.posts.length ? ` · ${Math.round(100 * c.passN / c.posts.length)}%` : ''}</em></div>
+      </div>${c.rows.length ? '' : '<div class="empty">ยังไม่มีผู้ส่งแบบทดสอบ</div>'}`;
+    } else if (this.tab === 'people') {
+      const k = this.q.toLowerCase(), list = c.rows.filter(r => !k || (r.emp_id + r.name + r.dept).toLowerCase().includes(k));
+      const cell = (r, ph) => r[ph] ? `${r[ph].score}/${r[ph].total} <button class="xbtn" data-del="${r[ph].id}" title="ลบผลนี้ให้ทำใหม่">✕</button>` : '–';
+      box.innerHTML = `<input class="search" id="pq" placeholder="ค้นหารหัส / ชื่อ / แผนก" value="${esc(this.q)}" style="margin-bottom:10px">
+        <div class="tblwrap"><table class="rep"><tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>แผนก</th><th class="num">Pre</th><th class="num">Post</th><th class="num">เปลี่ยนแปลง</th><th>ผล</th></tr>
+        ${list.map(r => `<tr><td>${esc(r.emp_id)}</td><td>${esc(r.name)}</td><td>${esc(r.dept)}</td>
+          <td class="num">${cell(r, 'pre')}</td><td class="num">${cell(r, 'post')}</td>
+          <td class="num">${r.pre && r.post ? sgn(r.post.score - r.pre.score) : '–'}</td>
+          <td>${r.passed == null ? '<span class="hint">ยังไม่ทำ Post</span>' : r.passed ? '<span class="up">ผ่าน</span>' : '<span class="down">ไม่ผ่าน</span>'}</td></tr>`).join('')}
+        </table></div>${list.length ? '' : '<div class="empty">ไม่มีข้อมูล</div>'}`;
+      $('#pq').oninput = e => { this.q = e.target.value; const pos = e.target.selectionStart; this.renderBody(); const el = $('#pq'); el.focus(); el.setSelectionRange(pos, pos); };
+      $$('[data-del]', box).forEach(b => b.onclick = async () => {
+        if (!confirm('ลบผลนี้? ผู้ทำจะส่งใหม่ได้')) return;
+        const { error } = await sb.from('test_submissions').delete().eq('id', b.dataset.del);
+        if (error) return toast(errMsg(error), true);
+        await this.loadSubs(); this.renderBody(); toast('ลบแล้ว');
+      });
+    } else if (this.tab === 'dept') {
+      box.innerHTML = `<div class="tblwrap"><table class="rep"><tr><th>แผนก</th><th class="num">คน</th><th class="num">เฉลี่ย Pre %</th><th class="num">เฉลี่ย Post %</th><th class="num">ผ่าน (Post)</th></tr>
+        ${c.depts.map(d => `<tr><td>${esc(d.dept)}</td><td class="num">${d.n}</td><td class="num">${dash(d.pre)}</td><td class="num">${dash(d.post)}</td>
+          <td class="num">${d.postN ? `${d.passN}/${d.postN} (${Math.round(100 * d.passN / d.postN)}%)` : '–'}</td></tr>`).join('')}
+        </table></div>${c.depts.length ? '' : '<div class="empty">ไม่มีข้อมูล</div>'}`;
+    } else {
+      box.innerHTML = `<p class="hint">แถวสีแดง = Post-test ตอบถูกน้อยกว่า 60% ควรทบทวนเนื้อหาข้อนี้</p>
+        <div class="tblwrap"><table class="rep"><tr><th>ข้อ</th><th>คำถาม</th><th class="num">ถูก Pre %</th><th class="num">ถูก Post %</th><th>ตอบผิดมากสุด (Post)</th></tr>
+        ${c.items.map(it => `<tr class="${it.post.pct != null && it.post.pct < 60 ? 'low' : ''}"><td>${it.n}</td>
+          <td style="white-space:normal;min-width:220px">${esc(it.text)}</td><td class="num">${dash(it.pre.pct)}</td><td class="num">${dash(it.post.pct)}</td>
+          <td style="white-space:normal">${it.post.wrong >= 0 ? `${LETTERS[it.post.wrong]}. ${esc(it.choices[it.post.wrong] || '(รูป)')} (${it.post.wrongN} คน)` : '–'}</td></tr>`).join('')}
+        </table></div>`;
+    }
+  },
+  bigQR() {
+    const el = document.createElement('div'); el.className = 'qroverlay';
+    el.innerHTML = `<h1>${esc(this.t.title)}</h1><div class="qrbox" id="bq"></div>
+      <div class="url">${esc(this.link().replace(/^https?:\/\//, ''))}</div><div class="code">แตะที่ใดก็ได้เพื่อปิด</div>`;
+    document.body.appendChild(el);
+    try { new QRCode($('#bq'), { text: this.link(), width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
+    el.onclick = () => { el.remove(); try { document.exitFullscreen(); } catch (e) {} };
+    try { el.requestFullscreen?.(); } catch (e) {}
+    onLeave(() => el.remove());
+  },
+  async excel() {
+    try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'); }
+    catch (e) { return toast('โหลดตัวสร้าง Excel ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ต', true); }
+    const c = this.calc(), t = this.t, X = window.XLSX, wb = X.utils.book_new();
+    const add = (name, rows) => { const ws = X.utils.aoa_to_sheet(rows); ws['!cols'] = rows[0].map(() => ({ wch: 16 })); X.utils.book_append_sheet(wb, ws, name); };
+    add('สรุป', [['หัวข้อ', 'ค่า'], ['รอบอบรม', t.title], ['รหัส', t.code], ['จำนวนข้อ', t.total], ['เกณฑ์ผ่าน (%)', t.pass_percent],
+      ['ทำ Pre-test (คน)', c.pres.length], ['ทำ Post-test (คน)', c.posts.length], ['ทำครบ 2 ครั้ง (คน)', c.both.length],
+      ['คะแนนเฉลี่ย Pre (%)', c.preAvg ?? ''], ['คะแนนเฉลี่ย Post (%)', c.postAvg ?? ''], ['เพิ่มขึ้นเฉลี่ย (%)', c.gain ?? ''],
+      ['ผ่านเกณฑ์ (คน)', c.passN], ['ผ่านเกณฑ์ (%)', c.posts.length ? Math.round(100 * c.passN / c.posts.length) : '']]);
+    add('รายคน', [['รหัสพนักงาน', 'ชื่อ-สกุล', 'แผนก', 'Pre คะแนน', 'Pre %', 'Post คะแนน', 'Post %', 'เปลี่ยนแปลง', 'ผล', 'เวลาส่ง Pre', 'เวลาส่ง Post']]
+      .concat(c.rows.map(r => [r.emp_id, r.name, r.dept, r.pre ? r.pre.score : '', r.prePct ?? '', r.post ? r.post.score : '', r.postPct ?? '',
+        r.pre && r.post ? r.post.score - r.pre.score : '', r.passed == null ? 'ยังไม่ทำ Post' : r.passed ? 'ผ่าน' : 'ไม่ผ่าน',
+        r.pre ? new Date(r.pre.submitted_at).toLocaleString('th-TH') : '', r.post ? new Date(r.post.submitted_at).toLocaleString('th-TH') : ''])));
+    add('รายแผนก', [['แผนก', 'จำนวนคน', 'เฉลี่ย Pre %', 'เฉลี่ย Post %', 'ผ่าน (คน)', 'ทำ Post (คน)', 'ผ่าน %']]
+      .concat(c.depts.map(d => [d.dept, d.n, d.pre ?? '', d.post ?? '', d.passN, d.postN, d.postN ? Math.round(100 * d.passN / d.postN) : ''])));
+    add('รายข้อ', [['ข้อ', 'คำถาม', 'คำตอบที่ถูก', 'ถูก Pre %', 'ถูก Post %', 'ตอบผิดมากสุด (Post)', 'จำนวน']]
+      .concat(c.items.map(it => [it.n, it.text, `${LETTERS[it.correct]}. ${it.choices[it.correct] || '(รูป)'}`, it.pre.pct ?? '', it.post.pct ?? '',
+        it.post.wrong >= 0 ? `${LETTERS[it.post.wrong]}. ${it.choices[it.post.wrong] || '(รูป)'}` : '', it.post.wrongN || ''])));
+    add('คำตอบดิบ', [['ครั้ง', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'แผนก', 'คะแนน', ...t.questions.map((q, i) => `ข้อ ${i + 1}`)]]
+      .concat(this.subs.map(s => [s.phase === 'pre' ? 'Pre' : 'Post', s.emp_id, s.full_name, s.department, s.score,
+        ...s.answers.map((a, i) => LETTERS[a] + (a === t.questions[i].correct ? ' ✓' : ''))])));
+    X.writeFile(wb, `PrePost-${t.title}-${new Date().toISOString().slice(0, 10)}.xlsx`.replace(/[\\/:*?"<>|]/g, '_'));
+  }
+};
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if ([...document.scripts].some(s => s.src === src)) return res();
+    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+  });
+}
 
 function countUp(el) {
   if (!el) return;
