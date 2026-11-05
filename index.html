@@ -159,6 +159,39 @@ textarea.inp{resize:vertical;min-height:62px}
   border-top:1px solid var(--line);z-index:6}
 .savebar .in{max-width:980px;margin:auto;display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));align-items:center}
 .savebar .st{font-size:13px;color:var(--muted)}
+/* v2: หน้าปก / สี / รูปคำตอบ */
+.qz .cover{margin:-16px -16px 4px;aspect-ratio:16/7;border-radius:16px 16px 0 0;object-fit:cover;width:calc(100% + 32px);
+  display:block;background:linear-gradient(135deg,var(--navy3),var(--navy));color:rgba(255,255,255,.85);
+  font-size:40px;font-weight:800;display:grid;place-items:center}
+.coverfld{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.coverfld img{width:180px;aspect-ratio:16/9;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.pal{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.palbtn{display:flex;border:1.5px solid var(--line);border-radius:8px;padding:3px;background:#fff;gap:2px}
+.palbtn i{width:12px;height:18px;border-radius:3px;display:block}
+.opt .ocol{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.othumb{position:relative;align-self:flex-start;margin:0 6px 4px}
+.othumb img{height:64px;max-width:120px;border-radius:8px;border:1px solid var(--line);display:block;object-fit:cover}
+.othumb button{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;border:0;background:var(--bad);
+  color:#fff;font-size:12px;display:grid;place-items:center;padding:0}
+.obtn{flex:none;width:34px;height:34px;border-radius:9px;border:1.5px solid var(--line);display:grid;place-items:center;
+  cursor:pointer;font-size:16px;position:relative;overflow:hidden;background:#fff}
+.obtn.swatch{border:3px solid #fff;box-shadow:0 0 0 1.5px var(--line)}
+.obtn.swatch input{position:absolute;inset:-8px;width:60px;height:60px;opacity:0;cursor:pointer}
+.cimg{display:block;max-width:100%;border-radius:10px;background:#fff;object-fit:contain}
+.pchoices.imgs{grid-template-columns:1fr 1fr}
+.pchoices.imgs .pc{flex-direction:column;align-items:stretch;text-align:center;padding:10px}
+.pchoices.imgs .pc b{position:absolute;top:8px;left:8px;width:32px;height:32px;font-size:18px;z-index:1}
+.pc{position:relative}
+.pc .cbody{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+.pc .cimg{max-height:22vh;margin:auto}
+.chosen{flex-direction:column}
+.chosen .cimg{max-height:26vh}
+.chosen .cb{display:flex;align-items:center;gap:12px}
+.tile .cbody{position:relative;flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
+.tile .cimg{max-height:20vh;align-self:flex-start}
+.tiles.imgs .tile{align-items:flex-start}
+.lobby-cover{width:100%;max-height:24vh;object-fit:cover;border-radius:18px;margin-bottom:clamp(10px,1.5vw,20px)}
+.pcover{width:100%;max-height:30vh;object-fit:cover;border-radius:16px}
 @media (max-width:640px){
   .meta-grid{grid-template-columns:1fr}
   .opts{grid-template-columns:1fr}
@@ -266,6 +299,27 @@ const CFG = window.QUIZ_CONFIG || {};
 const APP = CFG.APP_NAME || 'Quiz Live';
 const LETTERS = ['ก', 'ข', 'ค', 'ง'];
 const TIMES = [10, 15, 20, 30, 45, 60, 90, 120];
+const DEF_COLORS = ['#e44d57', '#2c7bd6', '#ec9a26', '#2a9d63'];
+const PALETTES = [
+  { name: 'มาตรฐาน', c: DEF_COLORS },
+  { name: 'พาสเทล', c: ['#f4a3a8', '#9cc5ee', '#f7d08a', '#9fd8b8'] },
+  { name: 'ฟ้า-เขียว', c: ['#0e7490', '#0891b2', '#14b8a6', '#65a30d'] },
+  { name: 'สดใส', c: ['#d946ef', '#f43f5e', '#f97316', '#eab308'] },
+  { name: 'เข้ม', c: ['#7f1d1d', '#1e3a8a', '#78350f', '#14532d'] },
+  { name: 'ธรรมชาติ', c: ['#b45309', '#4d7c0f', '#0f766e', '#9a3412'] }
+];
+const HEX = /^#[0-9a-f]{6}$/i;
+const colorAt = (colors, i) => (colors && HEX.test(colors[i] || '')) ? colors[i] : DEF_COLORS[i];
+const inkFor = hex => { const n = parseInt(hex.slice(1), 16);
+  return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) > 170 ? '#18222d' : '#fff'; };
+const chipStyle = (colors, i) => { const c = colorAt(colors, i); return `background:${c};color:${inkFor(c)}`; };
+const imgAt = (images, i) => (images && typeof images[i] === 'string' && images[i]) || '';
+const hasImgs = images => !!(images && images.some(Boolean));
+const choiceBody = (text, img) =>
+  `<span class="cbody">${img ? `<img class="cimg" src="${esc(img)}" alt="">` : ''}${text ? `<span>${esc(text)}</span>` : ''}</span>`;
+const chosenHTML = (s, i) => `<div class="chosen" style="${chipStyle(s.colors, i)}">
+  <div class="cb"><b>${LETTERS[i]}</b>${s.choices[i] ? `<span>${esc(s.choices[i])}</span>` : ''}</div>
+  ${imgAt(s.images, i) ? `<img class="cimg" src="${esc(imgAt(s.images, i))}" alt="">` : ''}</div>`;
 const app = document.getElementById('app');
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -434,6 +488,7 @@ const Player = {
     }
     if (s.status === 'lobby') {
       app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">
+        ${s.cover_url ? `<img class="pcover" src="${esc(s.cover_url)}" alt="">` : ''}
         <p>เข้าห้องเรียบร้อย ✓</p><div class="namechip">${esc(s.nickname)}</div>
         <h1 style="font-size:24px">${esc(s.title)}</h1>
         <div class="dots"><span></span><span></span><span></span></div>
@@ -446,8 +501,8 @@ const Player = {
       const img = s.image_url ? `<img class="pimg" src="${esc(s.image_url)}" alt="">` : '';
       app.innerHTML = `<main class="pscreen">${bar}<div class="tbar"><i id="tfill"></i></div>
         <h2 class="pq">${esc(s.question)}</h2>${img}
-        <div class="pchoices">${s.choices.map((c, i) =>
-          `<button class="pc c${i}" data-i="${i}"><b>${LETTERS[i]}</b><span>${esc(c)}</span></button>`).join('')}</div>
+        <div class="pchoices ${hasImgs(s.images) ? 'imgs' : ''}">${s.choices.map((c, i) =>
+          `<button class="pc" style="${chipStyle(s.colors, i)}" data-i="${i}"><b>${LETTERS[i]}</b>${choiceBody(c, imgAt(s.images, i))}</button>`).join('')}</div>
         <p class="hint" id="tleft" style="color:inherit;opacity:.8;text-align:center"></p></main>`;
       $$('.pc').forEach(b => b.onclick = () => this.answer(+b.dataset.i));
       this.tick();
@@ -456,8 +511,7 @@ const Player = {
     if (s.status === 'question' && s.answered) {
       const i = s.my_choice;
       app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">
-        <p>ส่งคำตอบแล้ว</p>
-        <div class="chosen c${i}"><b>${LETTERS[i]}</b><span>${esc(s.choices[i])}</span></div>
+        <p>ส่งคำตอบแล้ว</p>${chosenHTML(s, i)}
         <div class="dots"><span></span><span></span><span></span></div><p>รอดูเฉลยบนจอ</p></div></main>`;
       return;
     }
@@ -465,8 +519,7 @@ const Player = {
       const ok = s.is_correct;
       setBody('player ' + (ok ? 'good' : 'bad'));
       const head = ok ? `<h1>ถูกต้อง! 🎉</h1><div class="bignum">+${fmt(s.points)}</div>`
-                      : `<h1>${s.answered ? 'ยังไม่ถูก' : 'ไม่ทันตอบ'}</h1><p>คำตอบที่ถูกคือ</p>
-                         <div class="chosen c${s.correct}"><b>${LETTERS[s.correct]}</b><span>${esc(s.choices[s.correct])}</span></div>`;
+                      : `<h1>${s.answered ? 'ยังไม่ถูก' : 'ไม่ทันตอบ'}</h1><p>คำตอบที่ถูกคือ</p>${chosenHTML(s, s.correct)}`;
       app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">${head}
         <div class="stat"><div><small>คะแนนรวม</small><strong>${fmt(s.score)}</strong></div>
         <div><small>อันดับ</small><strong>${s.rank}</strong> / ${s.players}</div></div>
@@ -515,7 +568,7 @@ const Admin = {
     app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`);
     bindShell();
     const [qz, live] = await Promise.all([
-      sb.from('quizzes').select('id,title,department,description,owner_id,owner_email,updated_at,questions(count)')
+      sb.from('quizzes').select('id,title,department,description,cover_url,owner_id,owner_email,updated_at,questions(count)')
         .order('updated_at', { ascending: false }),
       sb.from('sessions').select('id,title,pin,status,created_at').neq('status', 'ended')
         .eq('host_id', user.id).order('created_at', { ascending: false })
@@ -564,6 +617,8 @@ const Admin = {
     box.innerHTML = `<div class="grid">${list.map(q => {
       const mine = q.owner_id === u.id, n = (q.questions && q.questions[0] && q.questions[0].count) || 0;
       return `<article class="qz">
+        ${q.cover_url ? `<img class="cover" src="${esc(q.cover_url)}" alt="" loading="lazy">`
+                      : `<div class="cover">${esc([...q.title][0] || '?')}</div>`}
         ${q.department ? `<span class="dept" style="align-self:flex-start">${esc(q.department)}</span>` : ''}
         <h3>${esc(q.title)}</h3>
         <div class="meta">${n} ข้อ · แก้ไข ${new Date(q.updated_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
@@ -594,7 +649,11 @@ const Admin = {
   },
 
   // ---------- ตัวแก้ไข ----------
-  blankQ() { return { text: '', image_url: '', choices: ['', '', '', ''], correct_index: 0, time_limit: 20 }; },
+  blankQ() {
+    const last = this.qs && this.qs[this.qs.length - 1];   // ข้อใหม่ใช้ชุดสีเดียวกับข้อก่อนหน้า
+    return { text: '', image_url: '', choices: ['', '', '', ''], images: ['', '', '', ''],
+             colors: last ? [...last.colors] : [...DEF_COLORS], correct_index: 0, time_limit: last ? last.time_limit : 20 };
+  },
   async edit(id) {
     setBody('admin');
     const user = await requireStaff(); if (!user) return;
@@ -611,8 +670,10 @@ const Admin = {
       if (a.data.owner_id !== user.id) { toast('แก้ไขได้เฉพาะชุดคำถามของตัวเอง กด “คัดลอกมาแก้” แทน', true); location.hash = '#admin'; return; }
       quiz = a.data;
       qs = (b.data || []).map(q => ({ text: q.text, image_url: q.image_url || '', time_limit: q.time_limit,
-        correct_index: q.correct_index, choices: [0, 1, 2, 3].map(i => q.choices[i] || '') }));
+        correct_index: q.correct_index, choices: [0, 1, 2, 3].map(i => q.choices[i] || ''),
+        colors: [0, 1, 2, 3].map(i => colorAt(q.colors, i)), images: [0, 1, 2, 3].map(i => imgAt(q.choice_images, i)) }));
     }
+    this.qs = null;
     if (!qs.length) qs.push(this.blankQ());
     this.quiz = quiz; this.qs = qs; this.dirty = false;
     const depts = [...new Set((await sb.from('quizzes').select('department')).data?.map(d => d.department).filter(Boolean) || [])];
@@ -631,6 +692,7 @@ const Admin = {
           <datalist id="dl-dept">${depts.map(d => `<option value="${esc(d)}">`).join('')}</datalist></div>
         <div class="fld full"><label for="f-desc">คำอธิบาย (ไม่บังคับ)</label>
           <input class="inp" id="f-desc" maxlength="300" value="${esc(quiz.description)}"></div>
+        <div class="fld full"><label>รูปหน้าปก (ไม่บังคับ · แนวนอนจะสวยที่สุด)</label><div class="coverfld" id="coverfld"></div></div>
       </div>
       <div id="qlist"></div>
       <button class="btn light" id="addq" style="margin-top:14px;width:100%">+ เพิ่มคำถาม</button>`) + `
@@ -649,7 +711,22 @@ const Admin = {
     ql.addEventListener('input', e => this.onInput(e));
     ql.addEventListener('change', e => this.onInput(e));
     ql.addEventListener('click', e => this.onClick(e));
-    this.renderQs(); this.status();
+    this.renderCover(); this.renderQs(); this.status();
+  },
+  renderCover() {
+    const box = $('#coverfld'), url = this.quiz.cover_url;
+    box.innerHTML = url
+      ? `<img src="${esc(url)}" alt=""><label class="upl">เปลี่ยนรูป<input type="file" accept="image/*" hidden></label>
+         <button class="btn danger sm" id="rmcover">ลบรูปปก</button>`
+      : `<label class="upl">🖼 ใส่รูปหน้าปก<input type="file" accept="image/*" hidden></label>`;
+    const inp = $('input', box);
+    inp.onchange = async () => {
+      if (!inp.files[0]) return;
+      const url2 = await this.upload(inp.files[0], inp, 1600);
+      if (url2) { this.quiz.cover_url = url2; this.touch(); }
+      this.renderCover();
+    };
+    const rm = $('#rmcover'); if (rm) rm.onclick = () => { this.quiz.cover_url = ''; this.touch(); this.renderCover(); };
   },
   touch() { this.dirty = true; this.status(); },
   status() { const s = $('#st'); if (s) s.textContent = `${this.qs.length} ข้อ` + (this.dirty ? ' · ยังไม่ได้บันทึก' : ''); },
@@ -667,24 +744,44 @@ const Admin = {
         <div class="qimg">${q.image_url
           ? `<img src="${esc(q.image_url)}" alt=""><button class="btn danger sm" data-act="rmimg">ลบรูป</button>`
           : `<label class="upl">🖼 ใส่รูปประกอบ<input type="file" accept="image/*" data-act="img" hidden></label>`}</div>
+        <div class="pal"><span>ชุดสี</span>${PALETTES.map((p, pi) =>
+          `<button class="palbtn" data-act="pal" data-pi="${pi}" title="${esc(p.name)}">${p.c.map(c => `<i style="background:${c}"></i>`).join('')}</button>`).join('')}
+          ${n > 1 ? '<button class="btn light sm" data-act="palall">ใช้สีนี้กับทุกข้อ</button>' : ''}</div>
         <div class="opts">${[0, 1, 2, 3].map(i => `
           <div class="opt ${q.correct_index === i ? 'on' : ''}">
             <label class="mark" title="ตั้งเป็นคำตอบที่ถูก"><input type="radio" name="cor${qi}" value="${i}" data-f="correct" ${q.correct_index === i ? 'checked' : ''}>
-              <b class="c${i}">${LETTERS[i]}</b></label>
-            <input type="text" data-f="choice" data-ci="${i}" maxlength="150" value="${esc(q.choices[i])}"
-              placeholder="ตัวเลือก ${LETTERS[i]}${i >= 2 ? ' (ไม่บังคับ)' : ''}"></div>`).join('')}</div>
-        <p class="hint">แตะตัวอักษรสีหน้าตัวเลือก เพื่อตั้งเป็นคำตอบที่ถูก</p>
+              <b style="${chipStyle(q.colors, i)}">${LETTERS[i]}</b></label>
+            <div class="ocol">
+              <input type="text" data-f="choice" data-ci="${i}" maxlength="150" value="${esc(q.choices[i])}"
+                placeholder="${q.images[i] ? 'คำบรรยายใต้รูป (ไม่บังคับ)' : `ตัวเลือก ${LETTERS[i]}${i >= 2 ? ' (ไม่บังคับ)' : ''}`}">
+              ${q.images[i] ? `<div class="othumb"><img src="${esc(q.images[i])}" alt=""><button data-act="rmcimg" data-ci="${i}" title="ลบรูป">✕</button></div>` : ''}
+            </div>
+            ${q.images[i] ? '' : `<label class="obtn" title="ใช้รูปเป็นคำตอบ">🖼<input type="file" accept="image/*" data-act="cimg" data-ci="${i}" hidden></label>`}
+            <label class="obtn swatch" title="เปลี่ยนสี" style="background:${colorAt(q.colors, i)}"><input type="color" data-f="color" data-ci="${i}" value="${colorAt(q.colors, i)}"></label>
+          </div>`).join('')}</div>
+        <p class="hint">แตะตัวอักษรสีเพื่อเลือกคำตอบที่ถูก · 🖼 ใช้รูปเป็นคำตอบ · วงกลมสีขวาสุดใช้เปลี่ยนสี</p>
       </section>`).join('');
   },
   onInput(e) {
     const el = e.target, card = el.closest('.qcard'); if (!card) return;
-    if (el.dataset.act === 'img') {
-      if (e.type === 'change' && el.files[0]) this.upload(+card.dataset.qi, el.files[0], el);
+    const q = this.qs[+card.dataset.qi];
+    if (el.dataset.act === 'img' || el.dataset.act === 'cimg') {
+      if (e.type === 'change' && el.files[0]) this.upload(el.files[0], el).then(url => {
+        if (url) { if (el.dataset.act === 'img') q.image_url = url; else q.images[+el.dataset.ci] = url; this.touch(); }
+        this.renderQs();
+      });
       return;
     }
     if (!el.dataset.f) return;
-    const q = this.qs[+card.dataset.qi], f = el.dataset.f;
-    if (f === 'text') q.text = el.value;
+    const f = el.dataset.f;
+    if (f === 'color') {
+      const i = +el.dataset.ci, c = HEX.test(el.value) ? el.value : DEF_COLORS[i];
+      q.colors[i] = c;
+      const opt = $$('.opt', card)[i];
+      $('.mark b', opt).style.cssText = chipStyle(q.colors, i);
+      el.parentElement.style.background = c;
+    }
+    else if (f === 'text') q.text = el.value;
     else if (f === 'time_limit') q.time_limit = +el.value;
     else if (f === 'choice') q.choices[+el.dataset.ci] = el.value;
     else if (f === 'correct') {
@@ -701,31 +798,38 @@ const Admin = {
     else if (a === 'del') { if ((qs[qi].text || qs[qi].choices.some(Boolean)) && !confirm(`ลบข้อ ${qi + 1}?`)) return;
       qs.splice(qi, 1); if (!qs.length) qs.push(this.blankQ()); }
     else if (a === 'rmimg') qs[qi].image_url = '';
+    else if (a === 'rmcimg') qs[qi].images[+b.dataset.ci] = '';
+    else if (a === 'pal') qs[qi].colors = [...PALETTES[+b.dataset.pi].c];
+    else if (a === 'palall') { const c = qs[qi].colors; qs.forEach(q => q.colors = [...c]); toast('ใช้ชุดสีนี้กับทุกข้อแล้ว'); }
     else return;
     this.touch(); this.renderQs();
   },
-  async upload(qi, file, input) {
-    const lbl = input.closest('.upl'); if (lbl) lbl.firstChild.textContent = 'กำลังอัปโหลด… ';
+  // ย่อรูปแล้วอัปโหลด คืนค่า URL (หรือ null ถ้าไม่สำเร็จ)
+  async upload(file, input, max = 1280) {
+    const lbl = input.closest('label');
+    if (lbl) { lbl.style.opacity = .5; if (lbl.classList.contains('upl')) lbl.firstChild.textContent = 'กำลังอัปโหลด… '; else lbl.firstChild.textContent = '⏳'; }
     try {
-      const blob = await shrinkImage(file, 1280, 0.82);
+      const blob = await shrinkImage(file, max, 0.82);
       const path = `${this.user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
       const { error } = await sb.storage.from('quiz-images').upload(path, blob, { contentType: 'image/jpeg' });
       if (error) throw error;
-      this.qs[qi].image_url = sb.storage.from('quiz-images').getPublicUrl(path).data.publicUrl;
-      this.touch(); this.renderQs();
-    } catch (e) { toast('อัปโหลดรูปไม่สำเร็จ: ' + errMsg(e), true); this.renderQs(); }
+      return sb.storage.from('quiz-images').getPublicUrl(path).data.publicUrl;
+    } catch (e) { toast('อัปโหลดรูปไม่สำเร็จ: ' + errMsg(e), true); return null; }
   },
   collect() {
     const title = $('#f-title').value.trim();
     if (!title) throw new Error('กรุณาใส่ชื่อเกม');
     const out = this.qs.map((q, n) => {
-      const pairs = q.choices.map((t, i) => ({ t: t.trim(), i })).filter(p => p.t);
+      const pairs = q.choices.map((t, i) => ({ t: t.trim(), img: q.images[i] || '', c: colorAt(q.colors, i), i }))
+                             .filter(p => p.t || p.img);
       if (!q.text.trim()) throw new Error(`ข้อ ${n + 1}: ยังไม่ได้พิมพ์คำถาม`);
-      if (pairs.length < 2) throw new Error(`ข้อ ${n + 1}: ต้องมีอย่างน้อย 2 ตัวเลือก`);
+      if (pairs.length < 2) throw new Error(`ข้อ ${n + 1}: ต้องมีอย่างน้อย 2 ตัวเลือก (ข้อความหรือรูป)`);
       const ci = pairs.findIndex(p => p.i === q.correct_index);
       if (ci < 0) throw new Error(`ข้อ ${n + 1}: คำตอบที่ถูกเป็นช่องว่าง เลือกใหม่อีกครั้ง`);
-      return { text: q.text.trim(), image_url: q.image_url || '', choices: pairs.map(p => p.t),
-               correct_index: ci, time_limit: +q.time_limit || 20 };
+      const item = { text: q.text.trim(), image_url: q.image_url || '', choices: pairs.map(p => p.t),
+                     colors: pairs.map(p => p.c), correct_index: ci, time_limit: +q.time_limit || 20 };
+      if (pairs.some(p => p.img)) item.choice_images = pairs.map(p => p.img);
+      return item;
     });
     return { title, dept: $('#f-dept').value.trim(), desc: $('#f-desc').value.trim(), qs: out };
   },
@@ -735,7 +839,7 @@ const Admin = {
     const btns = [$('#save'), $('#saveplay')]; btns.forEach(b => b.disabled = true);
     try {
       const id = await rpc('save_quiz', { p_id: this.quiz.id, p_title: d.title, p_department: d.dept,
-                                         p_description: d.desc, p_questions: d.qs });
+                                         p_description: d.desc, p_questions: d.qs, p_cover: this.quiz.cover_url || '' });
       this.quiz.id = id; this.dirty = false; this.status();
       history.replaceState(null, '', '#edit/' + id);
       if (andPlay) return this.play(id);
@@ -840,6 +944,7 @@ const Host = {
     const url = this.joinUrl();
     app.innerHTML = `<div class="stg">${this.topbar()}
       <div class="lobby"><div class="joininfo">
+          ${this.s.cover_url ? `<img class="lobby-cover" src="${esc(this.s.cover_url)}" alt="">` : ''}
           <p>สแกน QR หรือเปิดเว็บด้วยมือถือ</p>
           <div class="url">${esc(url.replace(/^https?:\/\//, '').replace(/\?pin=.*/, ''))}</div>
           <p>แล้วใส่รหัสห้อง</p><div class="pin">${esc(this.s.pin.slice(0, 3))} ${esc(this.s.pin.slice(3))}</div></div>
@@ -890,7 +995,7 @@ const Host = {
       <div class="qwrap"><div class="qline"><div class="timer" id="tm"><span>${q.time}</span></div>
         <h1 class="qtext">${esc(q.text)}</h1></div>
         ${q.image_url ? `<img class="qimgbig" src="${esc(q.image_url)}" alt="">` : ''}
-        <div class="tiles">${q.choices.map((c, i) => `<div class="tile c${i}"><b><span>${LETTERS[i]}</span></b><span class="t">${esc(c)}</span></div>`).join('')}</div>
+        <div class="tiles ${hasImgs(q.images) ? 'imgs' : ''}">${q.choices.map((c, i) => `<div class="tile" style="${chipStyle(q.colors, i)}"><b><span>${LETTERS[i]}</span></b>${choiceBody(c, imgAt(q.images, i))}</div>`).join('')}</div>
         <div class="row" style="justify-content:flex-end"><button class="btn sun" id="rv">เฉลยเลย</button></div></div></div>`;
     this.bindTop();
     $('#rv').onclick = () => this.reveal();
@@ -926,9 +1031,9 @@ const Host = {
     const total = this.answers.size, right = counts[q.correct] || 0, max = Math.max(1, ...counts);
     app.innerHTML = `<div class="stg">${this.topbar(`<span class="pill">ข้อ ${this.s.current_index + 1} / ${this.s.total_questions}</span>`)}
       <div class="qwrap"><h1 class="qtext">${esc(q.text)}</h1>
-        <div class="tiles">${q.choices.map((c, i) => `<div class="tile c${i} ${i === q.correct ? 'correct' : 'dim'}">
+        <div class="tiles ${hasImgs(q.images) ? 'imgs' : ''}">${q.choices.map((c, i) => `<div class="tile ${i === q.correct ? 'correct' : 'dim'}" style="${chipStyle(q.colors, i)}">
           <i class="fill" data-w="${100 * counts[i] / max}"></i><b><span>${LETTERS[i]}</span></b>
-          <span class="t">${esc(c)}</span><span class="cnt">${counts[i]}</span></div>`).join('')}</div>
+          ${choiceBody(c, imgAt(q.images, i))}<span class="cnt">${counts[i]}</span></div>`).join('')}</div>
         <p class="sumline">ตอบถูก <b>${right}</b> จาก ${this.players.size} คน${total < this.players.size ? ` · ไม่ทันตอบ ${this.players.size - total} คน` : ''}</p>
         <div class="row" style="justify-content:flex-end"><button class="btn sun lg" id="tb">ดูอันดับคะแนน →</button></div></div></div>`;
     this.bindTop();

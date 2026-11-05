@@ -92,6 +92,12 @@ create table if not exists public.answers (
 );
 create index if not exists answers_session_idx on public.answers (session_id, question_index);
 
+-- v2: รูปหน้าปก / สีคำตอบต่อข้อ / รูปในตัวเลือก
+alter table public.quizzes   add column if not exists cover_url text;
+alter table public.sessions  add column if not exists cover_url text;
+alter table public.questions add column if not exists colors jsonb;          -- ["#rrggbb", ...] ต่อตัวเลือก
+alter table public.questions add column if not exists choice_images jsonb;   -- ["url" | "", ...] ต่อตัวเลือก
+
 -- ---------------------------------------------------------------------
 -- 2) สิทธิ์ (RLS) — ผู้เล่นไม่ต้องล็อกอิน เข้าถึงผ่านฟังก์ชันเท่านั้น
 -- ---------------------------------------------------------------------
@@ -146,28 +152,36 @@ create policy answers_host on public.answers for select to authenticated
 -- ---------------------------------------------------------------------
 
 -- บันทึกชุดคำถามทั้งชุดในครั้งเดียว (p_id = null คือสร้างใหม่)
+drop function if exists public.save_quiz(uuid, text, text, text, jsonb);
 create or replace function public.save_quiz(
-  p_id uuid, p_title text, p_department text, p_description text, p_questions jsonb
+  p_id uuid, p_title text, p_department text, p_description text, p_questions jsonb, p_cover text default null
 ) returns uuid language plpgsql security invoker set search_path = public as $$
 declare v_id uuid;
 begin
   if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
   if p_id is null then
-    insert into quizzes (title, department, description)
-    values (trim(p_title), trim(coalesce(p_department, '')), coalesce(p_description, ''))
+    insert into quizzes (title, department, description, cover_url)
+    values (trim(p_title), trim(coalesce(p_department, '')), coalesce(p_description, ''), nullif(p_cover, ''))
     returning id into v_id;
   else
     update quizzes set title = trim(p_title), department = trim(coalesce(p_department, '')),
-                       description = coalesce(p_description, ''), updated_at = now()
+                       description = coalesce(p_description, ''), cover_url = nullif(p_cover, ''),
+                       updated_at = now()
      where id = p_id and owner_id = auth.uid()
     returning id into v_id;
     if v_id is null then raise exception 'ไม่มีสิทธิ์แก้ไขชุดคำถามนี้'; end if;
     delete from questions where quiz_id = v_id;
   end if;
 
-  insert into questions (quiz_id, position, text, image_url, choices, correct_index, time_limit)
+  insert into questions (quiz_id, position, text, image_url, choices, correct_index, time_limit,
+                         colors, choice_images)
   select v_id, (t.ord - 1)::int, trim(t.q ->> 'text'), nullif(t.q ->> 'image_url', ''),
-         t.q -> 'choices', (t.q ->> 'correct_index')::int, coalesce((t.q ->> 'time_limit')::int, 20)
+         t.q -> 'choices', (t.q ->> 'correct_index')::int, coalesce((t.q ->> 'time_limit')::int, 20),
+         case when jsonb_typeof(t.q -> 'colors') = 'array'
+               and not exists (select 1 from jsonb_array_elements_text(t.q -> 'colors') c
+                                where c !~ '^#[0-9a-fA-F]{6}$')
+              then t.q -> 'colors' end,
+         case when jsonb_typeof(t.q -> 'choice_images') = 'array' then t.q -> 'choice_images' end
     from jsonb_array_elements(coalesce(p_questions, '[]'::jsonb)) with ordinality as t(q, ord);
   return v_id;
 end $$;
@@ -179,11 +193,12 @@ declare v_src quizzes; v_id uuid;
 begin
   select * into v_src from quizzes where id = p_id;
   if v_src.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
-  insert into quizzes (title, department, description)
-  values (left(v_src.title || ' (สำเนา)', 200), v_src.department, v_src.description)
+  insert into quizzes (title, department, description, cover_url)
+  values (left(v_src.title || ' (สำเนา)', 200), v_src.department, v_src.description, v_src.cover_url)
   returning id into v_id;
-  insert into questions (quiz_id, position, text, image_url, choices, correct_index, time_limit)
-  select v_id, position, text, image_url, choices, correct_index, time_limit
+  insert into questions (quiz_id, position, text, image_url, choices, correct_index, time_limit,
+                         colors, choice_images)
+  select v_id, position, text, image_url, choices, correct_index, time_limit, colors, choice_images
     from questions where quiz_id = p_id;
   return v_id;
 end $$;
@@ -199,7 +214,8 @@ begin
 
   select jsonb_agg(jsonb_build_object(
            'text', text, 'image_url', image_url, 'choices', choices,
-           'correct', correct_index, 'time', time_limit) order by position), count(*)
+           'correct', correct_index, 'time', time_limit,
+           'colors', colors, 'images', choice_images) order by position), count(*)
     into v_qs, v_n
     from questions where quiz_id = p_quiz_id;
   if v_n = 0 then raise exception 'ชุดคำถามนี้ยังไม่มีคำถาม'; end if;
@@ -211,8 +227,8 @@ begin
     if i > 50 then raise exception 'สร้างรหัสห้องไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
   end loop;
 
-  insert into sessions (quiz_id, host_id, title, pin, questions, total_questions)
-  values (p_quiz_id, auth.uid(), v_quiz.title, v_pin, v_qs, v_n)
+  insert into sessions (quiz_id, host_id, title, pin, questions, total_questions, cover_url)
+  values (p_quiz_id, auth.uid(), v_quiz.title, v_pin, v_qs, v_n, v_quiz.cover_url)
   returning id into v_id;
   return jsonb_build_object('session_id', v_id, 'pin', v_pin);
 end $$;
@@ -305,7 +321,8 @@ begin
   select * into s from sessions where id = p.session_id;
 
   r := jsonb_build_object('status', s.status, 'title', s.title, 'index', s.current_index,
-                          'total', s.total_questions, 'nickname', p.nickname, 'score', p.score);
+                          'total', s.total_questions, 'nickname', p.nickname, 'score', p.score,
+                          'cover_url', s.cover_url);
   if s.current_index >= 0 then
     q := s.questions -> s.current_index;
     select * into a from answers where player_id = p.id and question_index = s.current_index;
@@ -314,7 +331,7 @@ begin
   if s.status = 'question' then
     r := r || jsonb_build_object(
       'question', q ->> 'text', 'image_url', q ->> 'image_url', 'choices', q -> 'choices',
-      'time', (q ->> 'time')::int,
+      'colors', q -> 'colors', 'images', q -> 'images', 'time', (q ->> 'time')::int,
       'remaining', greatest(0, extract(epoch from s.question_ends_at - now())),
       'answered', a.id is not null, 'my_choice', a.choice);
   elsif s.status in ('reveal', 'ended') then
@@ -324,6 +341,7 @@ begin
     if s.status = 'reveal' then
       r := r || jsonb_build_object(
         'question', q ->> 'text', 'choices', q -> 'choices', 'correct', (q ->> 'correct')::int,
+        'colors', q -> 'colors', 'images', q -> 'images',
         'answered', a.id is not null, 'my_choice', a.choice,
         'is_correct', coalesce(a.is_correct, false), 'points', p.last_points);
     end if;
@@ -366,12 +384,12 @@ returns jsonb language sql security definer set search_path = public as $$
 $$;
 
 -- สิทธิ์เรียกฟังก์ชัน
-revoke execute on function public.save_quiz(uuid, text, text, text, jsonb),
+revoke execute on function public.save_quiz(uuid, text, text, text, jsonb, text),
                            public.duplicate_quiz(uuid), public.create_session(uuid),
                            public.host_next(uuid), public.host_reveal(uuid),
                            public.host_end(uuid), public.host_kick(uuid)
   from public, anon;
-grant execute on function public.save_quiz(uuid, text, text, text, jsonb),
+grant execute on function public.save_quiz(uuid, text, text, text, jsonb, text),
                           public.duplicate_quiz(uuid), public.create_session(uuid),
                           public.host_next(uuid), public.host_reveal(uuid),
                           public.host_end(uuid), public.host_kick(uuid)
