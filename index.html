@@ -1491,7 +1491,7 @@ const Training = {
     app.innerHTML = adminShell(this.user, `
       <div class="row"><a class="btn light sm" href="#admin">← กลับ</a><h2 class="sec grow">${esc(t.title)}</h2></div>
       <div class="tcard">
-        <div class="trow"><span class="phase">รหัส ${esc(t.code)}</span><span class="hint">${t.total} ข้อ · เกณฑ์ผ่าน</span>
+        <div class="trow"><span class="phase">รหัส ${esc(t.code)}</span><span class="hint">${t.total} ข้อ · เกณฑ์ผ่าน <b>Post-test</b> (Pre-test ไม่ตัดสินผ่าน/ไม่ผ่าน)</span>
           <input class="inp" id="pass" type="number" min="0" max="100" value="${t.pass_percent}" style="width:80px;padding:6px 8px"> %</div>
         <div class="linkbox"><span class="grow">${esc(this.link().replace(/^https?:\/\//, ''))}</span>
           <button class="btn light sm" id="copy">คัดลอก</button><button class="btn sm" id="bigqr">แสดง QR เต็มจอ</button></div>
