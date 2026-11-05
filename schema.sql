@@ -110,6 +110,8 @@ create index if not exists answers_session_idx on public.answers (session_id, qu
 alter table public.quizzes   add column if not exists cover_url text;
 -- v3: ส่วนตัว (false) / แชร์ให้ทุกแผนก (true)
 alter table public.quizzes   add column if not exists shared boolean not null default false;
+-- v4: รูปประจำตัวผู้เล่น (รหัสรูปจาก avatars.js)
+alter table public.players   add column if not exists avatar text;
 alter table public.sessions  add column if not exists cover_url text;
 alter table public.questions add column if not exists colors jsonb;          -- ["#rrggbb", ...] ต่อตัวเลือก
 alter table public.questions add column if not exists choice_images jsonb;   -- ["url" | "", ...] ต่อตัวเลือก
@@ -319,7 +321,8 @@ end $$;
 -- ---------------------------------------------------------------------
 -- 4) ฟังก์ชันฝั่งผู้เล่น (ไม่ต้องล็อกอิน ใช้ player_id + token)
 -- ---------------------------------------------------------------------
-create or replace function public.join_game(p_pin text, p_nickname text)
+drop function if exists public.join_game(text, text);
+create or replace function public.join_game(p_pin text, p_nickname text, p_avatar text default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare s sessions; v_name text := trim(coalesce(p_nickname, '')); p players;
 begin
@@ -335,9 +338,10 @@ begin
   if exists (select 1 from players where session_id = s.id and lower(nickname) = lower(v_name)) then
     raise exception 'ชื่อนี้มีคนใช้แล้ว ลองชื่ออื่น';
   end if;
-  insert into players (session_id, nickname) values (s.id, v_name) returning * into p;
+  insert into players (session_id, nickname, avatar)
+  values (s.id, v_name, case when p_avatar ~ '^[a-z0-9-]{1,30}$' then p_avatar end) returning * into p;
   return jsonb_build_object('player_id', p.id, 'token', p.token, 'session_id', s.id,
-                            'nickname', p.nickname, 'title', s.title);
+                            'nickname', p.nickname, 'avatar', p.avatar, 'title', s.title);
 end $$;
 
 create or replace function public.player_state(p_player uuid, p_token uuid)
@@ -349,7 +353,7 @@ begin
   select * into s from sessions where id = p.session_id;
 
   r := jsonb_build_object('status', s.status, 'title', s.title, 'index', s.current_index,
-                          'total', s.total_questions, 'nickname', p.nickname, 'score', p.score,
+                          'total', s.total_questions, 'nickname', p.nickname, 'avatar', p.avatar, 'score', p.score,
                           'cover_url', s.cover_url);
   if s.current_index >= 0 then
     q := s.questions -> s.current_index;
@@ -453,7 +457,7 @@ grant execute on function public.save_quiz(uuid, text, text, text, jsonb, text, 
                           public.host_next(uuid), public.host_reveal(uuid),
                           public.host_end(uuid), public.host_kick(uuid)
   to authenticated;
-grant execute on function public.join_game(text, text), public.player_state(uuid, uuid),
+grant execute on function public.join_game(text, text, text), public.player_state(uuid, uuid),
                           public.submit_answer(uuid, uuid, int), public.ping(), public.is_staff()
   to anon, authenticated;
 
