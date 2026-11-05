@@ -261,15 +261,18 @@ body.stage{background:radial-gradient(1200px 700px at 85% -10%, #21506f 0%, tran
 .stg-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-left:auto}
 .stg .btn.ghost{border-color:rgba(255,255,255,.35)}
 
-.lobby{flex:1;display:grid;grid-template-columns:1.3fr 1fr;gap:clamp(16px,3vw,48px);align-items:center}
+.lobby{flex:1;display:grid;grid-template-columns:1.15fr 1fr;gap:clamp(16px,3vw,48px);align-items:center}
 .joininfo p{margin:0;font-size:clamp(16px,1.6vw,24px);opacity:.8}
 .joininfo .url{font-size:clamp(20px,2.2vw,34px);font-weight:600;margin:4px 0 clamp(14px,2vw,28px);word-break:break-all;color:var(--sun2)}
 .joininfo .pin{font-size:clamp(64px,10vw,150px);font-weight:800;letter-spacing:.06em;line-height:1}
-.qrbox{background:#fff;border-radius:22px;padding:clamp(12px,1.5vw,22px);justify-self:center;width:min(100%,360px);aspect-ratio:1}
+.qrbox{background:#fff;border-radius:22px;padding:clamp(10px,1.2vw,20px);justify-self:center;
+  width:max(240px,min(100%,calc(100dvh - 360px)));aspect-ratio:1}
+.qrcell{display:flex;flex-direction:column;align-items:center;min-width:0}
+.qrcap{text-align:center;margin-top:10px;font-size:clamp(14px,1.3vw,20px);opacity:.8}
 .qrbox img,.qrbox canvas{width:100%!important;height:100%!important;image-rendering:pixelated}
 .lobby-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.15);padding-top:14px}
 .lobby-bar .count{font-size:clamp(20px,2vw,30px)} .lobby-bar .count b{font-size:1.4em;color:var(--sun)}
-.chips{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start;min-height:60px}
+.chips{display:flex;flex-wrap:wrap;gap:10px;align-content:flex-start;min-height:60px;max-height:22vh;overflow-y:auto}
 .chip{background:#fff;color:var(--navy);font-weight:600;padding:8px 16px;border-radius:99px;font-size:clamp(15px,1.4vw,21px);
   border:0;animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
 .chip:hover{text-decoration:line-through;background:#ffe1e1}
@@ -1071,7 +1074,7 @@ const Host = {
           <p>สแกน QR หรือเปิดเว็บด้วยมือถือ</p>
           <div class="url">${esc(url.replace(/^https?:\/\//, '').replace(/\?pin=.*/, ''))}</div>
           <p>แล้วใส่รหัสห้อง</p><div class="pin">${esc(this.s.pin.slice(0, 3))} ${esc(this.s.pin.slice(3))}</div></div>
-        <div class="qrbox" id="qr"></div></div>
+        <div class="qrcell"><div class="qrbox" id="qr"></div><div class="qrcap">📱 สแกนเพื่อเข้าร่วม</div></div></div>
       <div class="lobby-bar"><span class="count"><b id="pc">0</b> คนเข้าห้องแล้ว</span><span class="grow"></span>
         <span style="opacity:.6;font-size:14px">แตะชื่อเพื่อนำออก</span>
         <button class="btn sun lg" id="start">เริ่มเกม ▶</button></div>
