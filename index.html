@@ -1384,14 +1384,20 @@ const Test = {
         <div class="fld"><label for="t-emp">รหัสพนักงาน *</label><input class="inp" id="t-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters"></div>
         <div class="fld"><label for="t-name">ชื่อ-นามสกุล *</label><input class="inp" id="t-name" maxlength="120" value="${esc(me.name || '')}"></div>
         <div class="fld"><label for="t-dept">แผนก *</label>${depts.length
-          ? `<select class="inp" id="t-dept"><option value="">— เลือกแผนก —</option>${depts.map(d => `<option ${d === me.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>`
+          ? `<select class="inp" id="t-dept"><option value="">— เลือกแผนก —</option>${depts.map(d => `<option ${d === me.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+               <option value="__other" ${me.dept && !depts.includes(me.dept) ? 'selected' : ''}>อื่นๆ (พิมพ์เอง)</option></select>
+             <input class="inp" id="t-dept-other" maxlength="120" placeholder="พิมพ์ชื่อแผนก" value="${esc(me.dept && !depts.includes(me.dept) ? me.dept : '')}" hidden>`
           : `<input class="inp" id="t-dept" maxlength="120" value="${esc(me.dept || '')}">`}</div>
         <button class="btn sun lg">เริ่มทำแบบทดสอบ</button>
         <p class="hint" style="text-align:center">ตอบให้ครบทุกข้อแล้วกดส่ง · ส่งได้ครั้งเดียวต่อรอบ</p>
       </form></main>`;
+    const other = $('#t-dept-other'), sel = $('#t-dept');
+    const syncOther = () => { if (other) { other.hidden = sel.value !== '__other'; if (!other.hidden) other.focus(); } };
+    if (other) { sel.onchange = syncOther; other.hidden = sel.value !== '__other'; }
     $('#tf').onsubmit = ev => {
       ev.preventDefault();
-      const who = { emp_id: $('#t-emp').value.trim().toUpperCase(), name: $('#t-name').value.trim(), dept: $('#t-dept').value.trim() };
+      const dept = sel.value === '__other' ? other.value.trim() : sel.value.trim();
+      const who = { emp_id: $('#t-emp').value.trim().toUpperCase(), name: $('#t-name').value.trim(), dept };
       if (!who.emp_id || !who.name || !who.dept) return toast('กรุณากรอกรหัสพนักงาน ชื่อ และแผนกให้ครบ', true);
       save('quizlive.tester', { ...me, ...who });
       this.who = who; this.phase = $('input[name=ph]:checked').value;
@@ -1499,6 +1505,13 @@ const Training = {
         <label class="switch"><input type="checkbox" id="sw-post" ${t.post_open ? 'checked' : ''}> <span>รับคำตอบ <b>Post-test</b> (หลังอบรม)</span></label>
         <p class="hint">ใช้ลิงก์/QR เดียวกันทั้งก่อนและหลังอบรม ระบบเลือก Pre หรือ Post ให้ตามที่เปิดไว้</p>
       </div>
+      <details class="tcard" id="dpbox"><summary style="cursor:pointer;font-weight:600" id="dpsum">แผนกที่ใช้ในรอบนี้</summary>
+        <p class="hint" style="margin:0">ผู้ทำแบบทดสอบจะเลือกได้เฉพาะแผนกที่ติ๊กไว้ (มีตัวเลือก “อื่นๆ (พิมพ์เอง)” ให้เสมอ) · แก้รายชื่อหลักได้ที่กล่องผู้ดูแลระบบ</p>
+        <div class="row"><input class="search" id="dpq" placeholder="ค้นหาแผนก"><button class="btn light sm" id="dpall" type="button">เลือกทั้งหมด</button>
+          <button class="btn light sm" id="dpnone" type="button">ไม่เลือกเลย</button></div>
+        <div id="dplist" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 12px;max-height:320px;overflow:auto"></div>
+        <div class="row"><span class="hint grow" id="dpcount"></span><button class="btn sm" id="dpsave" type="button">บันทึกแผนกของรอบนี้</button></div>
+      </details>
       <div class="row" style="margin-top:16px">
         <div class="tabs">${[['sum', 'ภาพรวม'], ['people', 'รายคน'], ['dept', 'รายแผนก'], ['items', 'รายข้อ']].map(([k, v]) =>
           `<button data-tab="${k}" class="${this.tab === k ? 'on' : ''}">${v}</button>`).join('')}</div>
@@ -1518,6 +1531,7 @@ const Training = {
     $('#pass').onchange = e => { const v = Math.max(0, Math.min(100, +e.target.value || 0)); e.target.value = v; upd({ pass_percent: v }).then(() => this.renderBody()); };
     $$('[data-tab]').forEach(b => b.onclick = () => { this.tab = b.dataset.tab; $$('[data-tab]').forEach(x => x.classList.toggle('on', x === b)); this.renderBody(); });
     $('#xls').onclick = () => this.excel();
+    this.bindDepts();
     $('#deltr').onclick = async () => {
       if (!confirm(`ลบรอบ “${t.title}” และผลแบบทดสอบทั้งหมด? กู้คืนไม่ได้`)) return;
       const { error } = await sb.from('trainings').delete().eq('id', this.id);
@@ -1525,6 +1539,28 @@ const Training = {
       location.hash = '#admin';
     };
     this.renderBody();
+  },
+  async bindDepts() {
+    let master = []; try { master = await rpc('list_departments'); } catch (e) {}
+    const cur = Array.isArray(this.t.departments) ? this.t.departments : null;
+    const all = [...master, ...(cur || []).filter(d => !master.includes(d))];
+    const chosen = new Set(cur || master);
+    const sum = () => { $('#dpsum').textContent = `แผนกที่ใช้ในรอบนี้: ${cur == null && chosen.size === master.length ? `ทุกแผนก (${master.length})` : `${chosen.size} จาก ${all.length} แผนก`}`;
+      $('#dpcount').textContent = `เลือกแล้ว ${chosen.size} แผนก`; };
+    const draw = () => { const k = $('#dpq').value.trim().toLowerCase();
+      $('#dplist').innerHTML = all.filter(d => !k || d.toLowerCase().includes(k)).map(d =>
+        `<label style="display:flex;gap:8px;align-items:center;padding:4px 0"><input type="checkbox" value="${esc(d)}" ${chosen.has(d) ? 'checked' : ''}>${esc(d)}</label>`).join('')
+        || '<p class="hint">ยังไม่มีรายชื่อแผนกหลัก — ผู้ดูแลระบบเพิ่มได้ที่หน้าผู้จัด</p>'; sum(); };
+    $('#dplist').onchange = e => { if (e.target.checked) chosen.add(e.target.value); else chosen.delete(e.target.value); sum(); };
+    $('#dpq').oninput = draw;
+    $('#dpall').onclick = () => { all.forEach(d => chosen.add(d)); draw(); };
+    $('#dpnone').onclick = () => { chosen.clear(); draw(); };
+    $('#dpsave').onclick = async () => {
+      const val = (chosen.size === master.length && master.every(d => chosen.has(d))) ? null : all.filter(d => chosen.has(d));
+      const { error } = await sb.from('trainings').update({ departments: val }).eq('id', this.id);
+      if (error) return toast(errMsg(error), true);
+      this.t.departments = val; toast(val ? `บันทึกแล้ว ${val.length} แผนก` : 'ใช้ทุกแผนก'); };
+    draw();
   },
   // ---------- คำนวณรายงาน ----------
   calc() {

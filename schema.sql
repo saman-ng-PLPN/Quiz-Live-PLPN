@@ -531,6 +531,8 @@ create table if not exists public.test_submissions (
   submitted_at timestamptz not null default now(),
   unique (training_id, phase, emp_id)
 );
+-- v6: แผนกที่ใช้ในแต่ละรอบ (null = ทุกแผนกจากรายชื่อหลัก)
+alter table public.trainings add column if not exists departments jsonb;
 create index if not exists test_submissions_training_idx on public.test_submissions (training_id, phase);
 
 alter table public.departments      enable row level security;
@@ -613,7 +615,7 @@ begin
   return jsonb_build_object(
     'title', t.title, 'cover_url', t.cover_url, 'total', t.total,
     'pre_open', t.pre_open, 'post_open', t.post_open, 'pass_percent', t.pass_percent,
-    'departments', public.list_departments(),
+    'departments', case when jsonb_typeof(t.departments) = 'array' then t.departments else public.list_departments() end,
     'questions', case when t.pre_open or t.post_open then
       (select jsonb_agg(jsonb_build_object('text', q ->> 'text', 'image_url', q ->> 'image_url',
               'choices', q -> 'choices', 'colors', q -> 'colors', 'images', q -> 'images') order by o)
