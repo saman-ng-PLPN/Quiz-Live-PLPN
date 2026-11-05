@@ -159,6 +159,14 @@ textarea.inp{resize:vertical;min-height:62px}
   border-top:1px solid var(--line);z-index:6}
 .savebar .in{max-width:980px;margin:auto;display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));align-items:center}
 .savebar .st{font-size:13px;color:var(--muted)}
+/* v4: แถบเฉลยบนหน้าสรุปคะแนน */
+.ansbar{display:flex;align-items:center;justify-content:center;gap:clamp(10px,1.4vw,20px);flex-wrap:wrap;
+  font-size:clamp(16px,1.6vw,24px);animation:pop .4s ease-out}
+.ansbar .lbl{opacity:.85} .ansbar .lbl b{color:var(--sun);font-size:1.2em}
+.anschip{display:inline-flex;align-items:center;gap:12px;border-radius:14px;padding:8px 18px 8px 8px;font-weight:700;
+  font-size:clamp(18px,2vw,30px);box-shadow:0 0 0 4px #fff}
+.anschip b{width:1.6em;height:1.6em;border-radius:10px;background:rgba(255,255,255,.25);display:grid;place-items:center}
+.anschip img{height:clamp(44px,7vh,80px);border-radius:8px;background:#fff}
 /* v3: แชร์ / ผู้ดูแล */
 .vis{display:inline-block;font-size:12px;padding:2px 9px;border-radius:99px;font-weight:600;background:#eef1f4;color:var(--muted)}
 .vis.shared{background:#e3f4ea;color:#1b6b42}
@@ -1000,7 +1008,7 @@ const Host = {
     };
   },
   render() {
-    ({ lobby: () => this.rLobby(), question: () => this.rQuestion(), reveal: () => this.rReveal(),
+    ({ lobby: () => this.rLobby(), question: () => this.rQuestion(), reveal: () => this.rBoard(),
        board: () => this.rBoard(), ended: () => this.rEnded() })[this.phase]();
   },
 
@@ -1087,7 +1095,7 @@ const Host = {
     try {
       await rpc('host_reveal', { p_session: this.sid });
       await Promise.all([this.loadAnswers(), this.loadPlayers()]);
-      this.s.status = 'reveal'; this.phase = 'reveal'; this.broadcast(); this.render();
+      this.s.status = 'reveal'; this.phase = 'board'; this.broadcast(); this.render();
     } catch (e) { toast(errMsg(e), true); this.revealing = false; if (b) b.disabled = false; }
   },
   rReveal() {
@@ -1105,13 +1113,23 @@ const Host = {
     requestAnimationFrame(() => requestAnimationFrame(() => $$('.fill').forEach(f => f.style.width = f.dataset.w + '%')));
     $('#tb').onclick = () => { this.phase = 'board'; this.render(); };
   },
+  // แถบเฉลยบนหน้าสรุปคะแนน: คำตอบที่ถูก + จำนวนคนตอบถูก
+  answerBar() {
+    const q = this.q(); if (!q) return '';
+    let right = 0; for (const c of this.answers.values()) if (c === q.correct) right++;
+    const img = imgAt(q.images, q.correct);
+    return `<div class="ansbar"><span class="lbl">เฉลยข้อ ${this.s.current_index + 1}</span>
+      <span class="anschip" style="${chipStyle(q.colors, q.correct)}"><b>${LETTERS[q.correct]}</b>
+        ${img ? `<img src="${esc(img)}" alt="">` : ''}${q.choices[q.correct] ? `<span>${esc(q.choices[q.correct])}</span>` : ''}</span>
+      <span class="lbl">ตอบถูก <b>${right}</b> จาก ${this.players.size} คน</span></div>`;
+  },
   rBoard() {
     const last = this.s.current_index + 1 >= this.s.total_questions;
     const now = this.sorted(), before = this.sorted(p => this.prev.has(p.id) ? this.prev.get(p.id) : p.score - p.last_points);
     const prevRank = new Map(before.map((p, i) => [p.id, i]));
     const show = now.slice(0, 10), max = Math.max(1, now[0] ? now[0].score : 1);
     app.innerHTML = `<div class="stg">${this.topbar(`<span class="pill">หลังข้อ ${this.s.current_index + 1} / ${this.s.total_questions}</span>`)}
-      <div class="board"><h1>อันดับคะแนน</h1>
+      <div class="board">${this.answerBar()}<h1>อันดับคะแนน</h1>
         <div class="lb" id="lb" style="height:calc(var(--row) * ${Math.max(1, show.length)})">${show.map(p => {
           const from = Math.min(prevRank.get(p.id) ?? 10, 10), old = p.score - p.last_points;
           return `<div class="lbrow" data-id="${p.id}" style="transform:translateY(calc(var(--row) * ${from}));opacity:${from >= 10 ? 0 : 1}">
