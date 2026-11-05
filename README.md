@@ -43,6 +43,9 @@
    - Site URL: ลิงก์จากข้อ 5
    - Redirect URLs: เพิ่มลิงก์เดียวกัน
 
+> ลิงก์สั้นสำหรับผู้เล่น: ตั้ง `JOIN_URL` ใน `config.js` (ตอนนี้ใช้ Cloudflare Pages: `plpnquiz.pages.dev`)
+> จอใหญ่จะแสดงลิงก์นี้และทำ QR จากลิงก์นี้เสมอ อย่าลืมเพิ่มลิงก์เดียวกันใน Supabase → Redirect URLs
+
 > Publishable / anon key เปิดเผยในหน้าเว็บได้ ปลอดภัยเพราะข้อมูลถูกคุมด้วยสิทธิ์ (RLS) ในฐานข้อมูล
 > ห้ามใส่ `service_role` / Secret key ใน `config.js` เด็ดขาด
 

@@ -1046,7 +1046,13 @@ const Host = {
     return [...this.players.values()].sort((a, b) => useScore(b) - useScore(a) || a.nickname.localeCompare(b.nickname, 'th'));
   },
   q() { return this.s.questions[this.s.current_index]; },
-  joinUrl() { return location.origin + location.pathname + '?pin=' + this.s.pin; },
+  // ลิงก์เข้าร่วม: ใช้ JOIN_URL จาก config.js (ลิงก์สั้น) ถ้ามี ไม่งั้นใช้ลิงก์ที่เปิดอยู่
+  joinBase() {
+    let b = (CFG.JOIN_URL || '').trim() || (location.origin + location.pathname);
+    if (!/^https?:\/\//.test(b)) b = 'https://' + b;
+    return b.replace(/\/?$/, '/');
+  },
+  joinUrl() { return this.joinBase() + '?pin=' + this.s.pin; },
   topbar(extra = '') {
     return `<div class="stg-top"><span class="brand">${brandHTML()}</span>
       <span class="pill">${esc(this.s.title)}</span><span class="pill sun">PIN ${esc(this.s.pin)}</span>${extra}
@@ -1072,7 +1078,7 @@ const Host = {
       <div class="lobby"><div class="joininfo">
           ${this.s.cover_url ? `<img class="lobby-cover" src="${esc(this.s.cover_url)}" alt="">` : ''}
           <p>สแกน QR หรือเปิดเว็บด้วยมือถือ</p>
-          <div class="url">${esc(url.replace(/^https?:\/\//, '').replace(/\?pin=.*/, ''))}</div>
+          <div class="url">${esc(this.joinBase().replace(/^https?:\/\//, '').replace(/\/$/, ''))}</div>
           <p>แล้วใส่รหัสห้อง</p><div class="pin">${esc(this.s.pin.slice(0, 3))} ${esc(this.s.pin.slice(3))}</div></div>
         <div class="qrcell"><div class="qrbox" id="qr"></div><div class="qrcap">📱 สแกนเพื่อเข้าร่วม</div></div></div>
       <div class="lobby-bar"><span class="count"><b id="pc">0</b> คนเข้าห้องแล้ว</span><span class="grow"></span>
