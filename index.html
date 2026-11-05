@@ -161,6 +161,9 @@ textarea.inp{resize:vertical;min-height:62px}
 .savebar .in{max-width:980px;margin:auto;display:flex;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));align-items:center}
 .savebar .st{font-size:13px;color:var(--muted)}
 /* v5: รูปประจำตัว */
+.avwrap{position:relative;display:inline-block;line-height:0}
+.avwrap .av.xl{width:132px;height:132px}
+.avwrap .medal{position:absolute;right:-10px;bottom:-8px;font-size:48px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.3))}
 .av{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:50%;overflow:hidden;flex:none;line-height:0;
   background:var(--navy3);color:#fff;font-weight:700;font-size:16px;vertical-align:middle}
 .av svg{width:100%;height:100%;display:block}
@@ -590,7 +593,7 @@ const Player = {
       setBody('player ' + (ok ? 'good' : 'bad'));
       const head = ok ? `<h1>ถูกต้อง! 🎉</h1><div class="bignum">+${fmt(s.points)}</div>`
                       : `<h1>${s.answered ? 'ยังไม่ถูก' : 'ไม่ทันตอบ'}</h1><p>คำตอบที่ถูกคือ</p>${chosenHTML(s, s.correct)}`;
-      app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">${head}
+      app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">${avatarHTML(s.avatar, s.nickname, 'lg')}${head}
         <div class="stat"><div><small>คะแนนรวม</small><strong>${fmt(s.score)}</strong></div>
         <div><small>อันดับ</small><strong>${s.rank}</strong> / ${s.players}</div></div>
         <p>รอข้อถัดไป…</p></div></main>`;
@@ -599,7 +602,7 @@ const Player = {
     if (s.status === 'ended') {
       const medal = ['🥇', '🥈', '🥉'][s.rank - 1] || '🎯';
       app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">
-        <p>จบเกมแล้ว</p><div style="font-size:72px;line-height:1">${medal}</div>
+        <p>จบเกมแล้ว</p><div class="avwrap">${avatarHTML(s.avatar, s.nickname, 'xl')}<span class="medal">${medal}</span></div>
         <h1>อันดับ ${s.rank} จาก ${s.players} คน</h1>
         <div class="stat"><div><small>คะแนนรวม</small><strong>${fmt(s.score)}</strong></div></div>
         <p>ขอบคุณที่ร่วมสนุกครับ</p>
