@@ -567,7 +567,7 @@ create or replace function public.set_departments(p_names jsonb)
 returns jsonb language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
-  delete from departments;
+  delete from departments where true;   -- Supabase บังคับให้ DELETE มี WHERE
   insert into departments (name, sort)
   select distinct on (trim(n)) trim(n), min(ord) over (partition by trim(n))
     from jsonb_array_elements_text(coalesce(p_names, '[]'::jsonb)) with ordinality as t(n, ord)
