@@ -104,6 +104,11 @@ alter table public.answers    enable row level security;
 
 revoke all on public.app_config, public.quizzes, public.questions,
               public.sessions, public.players, public.answers from anon;
+-- ให้สิทธิ์ชัดเจน (ใช้ได้แม้ปิด "Automatically expose new tables")
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.quizzes, public.questions to authenticated;
+grant select, delete on public.sessions to authenticated;
+grant select on public.players, public.answers to authenticated;
 
 drop policy if exists quizzes_read   on public.quizzes;
 drop policy if exists quizzes_insert on public.quizzes;
