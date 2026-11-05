@@ -1060,16 +1060,17 @@ const Host = {
         <h1 class="qtext">${esc(q.text)}</h1></div>
         ${q.image_url ? `<img class="qimgbig" src="${esc(q.image_url)}" alt="">` : ''}
         <div class="tiles ${hasImgs(q.images) ? 'imgs' : ''}">${q.choices.map((c, i) => `<div class="tile" style="${chipStyle(q.colors, i)}"><b><span>${LETTERS[i]}</span></b>${choiceBody(c, imgAt(q.images, i))}</div>`).join('')}</div>
-        <div class="row" style="justify-content:flex-end"><button class="btn sun" id="rv">เฉลยเลย</button></div></div></div>`;
+        <div class="row" style="justify-content:flex-end"><button class="btn ghost" id="rv">เฉลยเลย (ไม่รอเวลา)</button></div></div></div>`;
     this.bindTop();
     $('#rv').onclick = () => this.reveal();
     this.onAnswers(); this.tick();
   },
   onAnswers() {
-    const el = $('#ac'); if (el) el.textContent = `ตอบแล้ว ${this.answers.size}/${this.players.size}`;
-    if (this.phase === 'question' && this.players.size && this.answers.size >= this.players.size && !this.revealing) {
-      this.revealing = true; setTimeout(() => this.reveal(), 900);
-    }
+    // ไม่เฉลยก่อนหมดเวลา แม้ทุกคนตอบครบแล้ว (ผู้จัดกด "เฉลยเลย" เองได้)
+    const el = $('#ac'); if (!el) return;
+    const all = this.players.size > 0 && this.answers.size >= this.players.size;
+    el.textContent = all ? `✓ ตอบครบทุกคนแล้ว (${this.answers.size})` : `ตอบแล้ว ${this.answers.size}/${this.players.size}`;
+    el.classList.toggle('sun', all);
   },
   tick() {
     if (this.phase !== 'question') return;
