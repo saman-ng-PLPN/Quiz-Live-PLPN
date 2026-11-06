@@ -661,3 +661,299 @@ revoke execute on function public.set_departments(jsonb), public.create_training
 grant execute on function public.set_departments(jsonb), public.create_training(uuid, text, int) to authenticated;
 grant execute on function public.list_departments(), public.test_info(text),
                           public.submit_test(text, text, text, text, text, jsonb) to anon, authenticated;
+
+-- =====================================================================
+-- 8) v7: โรงพยาบาล · สอบ Post-test ซ้ำจนผ่าน · สลับข้อ · แบบประเมิน (ไม่ระบุตัวตน)
+-- =====================================================================
+create table if not exists public.hospitals (
+  name text primary key check (char_length(name) between 1 and 120),
+  sort int not null default 0
+);
+alter table public.hospitals enable row level security;
+revoke all on public.hospitals from anon, authenticated;
+insert into public.hospitals (name, sort)
+select n, s from (values ('ป.แพทย์ 1', 1), ('ป.แพทย์ 2', 2)) v(n, s)
+ where not exists (select 1 from public.hospitals);
+
+create or replace function public.list_hospitals()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(name order by sort, name), '[]'::jsonb) from hospitals
+$$;
+create or replace function public.set_hospitals(p_names jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  delete from hospitals where true;
+  insert into hospitals (name, sort)
+  select distinct on (trim(n)) trim(n), min(ord) over (partition by trim(n))
+    from jsonb_array_elements_text(coalesce(p_names, '[]'::jsonb)) with ordinality as t(n, ord)
+   where trim(n) <> '';
+  return public.list_hospitals();
+end $$;
+
+-- รหัส 6 หลักสำหรับแบบประเมินแบบเดี่ยว
+create or replace function public.gen_survey_code() returns text
+language plpgsql volatile security definer set search_path = public as $$
+declare c text; i int := 0;
+begin
+  loop
+    c := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from surveys where code = c);
+    i := i + 1; if i > 50 then raise exception 'สร้างรหัสไม่สำเร็จ'; end if;
+  end loop;
+  return c;
+end $$;
+
+create table if not exists public.surveys (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null default auth.uid(),
+  owner_email text not null default coalesce(auth.jwt() ->> 'email', ''),
+  title       text not null check (char_length(title) between 1 and 200),
+  description text not null default '',
+  items       jsonb not null default '[]'::jsonb,   -- [{id, type: section|scale|text, text, required}]
+  shared      boolean not null default false,
+  code        text unique,
+  open        boolean not null default false,       -- เปิดรับแบบเดี่ยว (?s=รหัส)
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+alter table public.surveys alter column code set default public.gen_survey_code();
+
+-- คำตอบแบบประเมิน: ไม่มีข้อมูลผู้ตอบ ไม่มีเวลาละเอียด (เก็บแค่วันที่) เพื่อจับคู่ย้อนกลับไม่ได้
+create table if not exists public.survey_responses (
+  id           uuid primary key default gen_random_uuid(),
+  survey_id    uuid not null references public.surveys(id) on delete cascade,
+  training_id  uuid references public.trainings(id) on delete cascade,
+  answers      jsonb not null,                          -- {item_id: ค่า}
+  submitted_on date not null default ((now() at time zone 'Asia/Bangkok')::date)
+);
+create index if not exists survey_responses_idx on public.survey_responses (survey_id, training_id);
+
+-- บันทึกว่าใคร "ทำแล้ว" (แยกจากคำตอบ ไม่มีเวลา)
+create table if not exists public.survey_done (
+  training_id uuid not null references public.trainings(id) on delete cascade,
+  emp_id      text not null,
+  primary key (training_id, emp_id)
+);
+
+alter table public.trainings add column if not exists survey_id uuid references public.surveys(id) on delete set null;
+alter table public.trainings add column if not exists shuffle boolean not null default true;
+alter table public.trainings add column if not exists retake  boolean not null default true;
+
+alter table public.test_submissions add column if not exists hospital text not null default '';
+alter table public.test_submissions add column if not exists attempt  int  not null default 1;
+alter table public.test_submissions drop constraint if exists test_submissions_training_id_phase_emp_id_key;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'test_submissions_attempt_key') then
+    alter table public.test_submissions add constraint test_submissions_attempt_key unique (training_id, phase, emp_id, attempt);
+  end if;
+end $$;
+
+alter table public.surveys          enable row level security;
+alter table public.survey_responses enable row level security;
+alter table public.survey_done      enable row level security;
+revoke all on public.surveys, public.survey_responses, public.survey_done from anon;
+grant select, insert, update, delete on public.surveys to authenticated;
+grant select, delete on public.survey_responses to authenticated;
+grant select on public.survey_done to authenticated;
+
+drop policy if exists surveys_read on public.surveys;
+create policy surveys_read on public.surveys for select to authenticated
+  using (public.is_staff() and (owner_id = auth.uid() or shared or public.is_admin()));
+drop policy if exists surveys_insert on public.surveys;
+create policy surveys_insert on public.surveys for insert to authenticated
+  with check (public.is_staff() and owner_id = auth.uid());
+drop policy if exists surveys_update on public.surveys;
+create policy surveys_update on public.surveys for update to authenticated
+  using (owner_id = auth.uid() or public.is_admin()) with check (owner_id = auth.uid() or public.is_admin());
+drop policy if exists surveys_delete on public.surveys;
+create policy surveys_delete on public.surveys for delete to authenticated
+  using (owner_id = auth.uid() or public.is_admin());
+
+-- เห็นคำตอบได้: เจ้าของแบบประเมิน / ผู้ดูแล / เจ้าของรอบอบรมที่ผูกไว้
+drop policy if exists responses_read on public.survey_responses;
+create policy responses_read on public.survey_responses for select to authenticated
+  using (exists (select 1 from public.surveys s where s.id = survey_id and (s.owner_id = auth.uid() or public.is_admin()))
+         or (training_id is not null and exists (select 1 from public.trainings t where t.id = training_id)));
+drop policy if exists responses_delete on public.survey_responses;
+create policy responses_delete on public.survey_responses for delete to authenticated
+  using (exists (select 1 from public.surveys s where s.id = survey_id and (s.owner_id = auth.uid() or public.is_admin()))
+         or (training_id is not null and exists (select 1 from public.trainings t where t.id = training_id)));
+drop policy if exists done_read on public.survey_done;
+create policy done_read on public.survey_done for select to authenticated
+  using (exists (select 1 from public.trainings t where t.id = training_id));
+
+-- ตรวจและทำความสะอาดคำตอบแบบประเมิน (ใช้ภายใน)
+create or replace function public.clean_survey_answers(p_items jsonb, p_ans jsonb)
+returns jsonb language plpgsql immutable set search_path = public as $$
+declare it jsonb; v jsonb; out jsonb := '{}'::jsonb; k text; n int := 0;
+begin
+  if jsonb_typeof(p_ans) <> 'object' then raise exception 'ข้อมูลแบบประเมินไม่ถูกต้อง'; end if;
+  for it in select * from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) loop
+    k := it ->> 'id'; v := p_ans -> k;
+    if it ->> 'type' = 'scale' then
+      n := n + 1;
+      if v is null or jsonb_typeof(v) = 'null' then
+        if coalesce((it ->> 'required')::boolean, false) then raise exception 'กรุณาให้คะแนนให้ครบทุกข้อ'; end if;
+      elsif jsonb_typeof(v) <> 'number' or (v #>> '{}')::numeric not in (1, 2, 3, 4, 5) then
+        raise exception 'คะแนนต้องอยู่ระหว่าง 1–5';
+      else out := out || jsonb_build_object(k, (v #>> '{}')::int); end if;
+    elsif it ->> 'type' = 'text' then
+      if v is not null and jsonb_typeof(v) = 'string' and trim(v #>> '{}') <> '' then
+        out := out || jsonb_build_object(k, left(trim(v #>> '{}'), 2000));
+      elsif coalesce((it ->> 'required')::boolean, false) then raise exception 'กรุณาตอบข้อความให้ครบ'; end if;
+    end if;
+  end loop;
+  return out;
+end $$;
+
+-- ข้อมูลแบบทดสอบสำหรับผู้ทำ (ไม่มีเฉลย)
+create or replace function public.test_info(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; sv surveys;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  select * into sv from surveys where id = t.survey_id;
+  return jsonb_build_object(
+    'title', t.title, 'cover_url', t.cover_url, 'total', t.total,
+    'pre_open', t.pre_open, 'post_open', t.post_open, 'pass_percent', t.pass_percent,
+    'shuffle', t.shuffle, 'retake', t.retake,
+    'departments', case when jsonb_typeof(t.departments) = 'array' then t.departments else public.list_departments() end,
+    'hospitals', public.list_hospitals(),
+    'survey', case when sv.id is not null then jsonb_build_object('title', sv.title, 'description', sv.description, 'items', sv.items) end,
+    'questions', case when t.pre_open or t.post_open then
+      (select jsonb_agg(jsonb_build_object('text', q ->> 'text', 'image_url', q ->> 'image_url',
+              'choices', q -> 'choices', 'colors', q -> 'colors', 'images', q -> 'images') order by o)
+         from jsonb_array_elements(t.questions) with ordinality as x(q, o)) end);
+end $$;
+
+-- สถานะของผู้สอบ (ใช้ QR เดียว พาไปขั้นตอนที่ถูกต้อง)
+create or replace function public.test_status(p_code text, p_emp_id text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; v_emp text := upper(trim(coalesce(p_emp_id, ''))); last test_submissions; first test_submissions;
+        v_pre test_submissions; v_n int; v_passed boolean; v_wrong jsonb;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้'; end if;
+  select * into v_pre from test_submissions where training_id = t.id and phase = 'pre' and emp_id = v_emp order by attempt limit 1;
+  select count(*) into v_n from test_submissions where training_id = t.id and phase = 'post' and emp_id = v_emp;
+  select * into last  from test_submissions where training_id = t.id and phase = 'post' and emp_id = v_emp order by attempt desc limit 1;
+  select * into first from test_submissions where training_id = t.id and phase = 'post' and emp_id = v_emp order by attempt limit 1;
+  v_passed := last.id is not null and 100.0 * last.score / last.total >= t.pass_percent;
+  if last.id is not null and not v_passed then
+    select coalesce(jsonb_agg(o - 1), '[]'::jsonb) into v_wrong
+      from jsonb_array_elements(t.questions) with ordinality x(q, o)
+     where (last.answers ->> (o - 1)::int) is distinct from (q ->> 'correct');
+  end if;
+  return jsonb_build_object(
+    'pre_done', v_pre.id is not null, 'pre_score', v_pre.score,
+    'post_attempts', v_n, 'post_passed', v_passed,
+    'survey_done', exists (select 1 from survey_done where training_id = t.id and emp_id = v_emp),
+    'has_survey', t.survey_id is not null,
+    'score', last.score, 'total', t.total, 'first_score', first.score,
+    'percent', case when last.id is not null then round(100.0 * last.score / t.total) end,
+    -- คำตอบเดิมและข้อที่ผิด ส่งเฉพาะตอนยังไม่ผ่าน (กันการดึงคำตอบของคนที่ผ่านแล้ว)
+    'last_answers', case when not v_passed then last.answers end,
+    'wrong', v_wrong);
+end $$;
+
+-- ส่งแบบทดสอบ (Post-test สอบซ้ำได้จนผ่าน ถ้าเปิด retake)
+drop function if exists public.submit_test(text, text, text, text, text, jsonb);
+create or replace function public.submit_test(
+  p_code text, p_phase text, p_emp_id text, p_name text, p_hospital text, p_dept text, p_answers jsonb
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; v_score int := 0; i int; v_ans int; v_pre test_submissions; v_att int; v_last test_submissions;
+        v_pass boolean; v_wrong jsonb := '[]'::jsonb;
+        v_emp text := upper(trim(coalesce(p_emp_id, ''))); v_name text := trim(coalesce(p_name, ''));
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้'; end if;
+  if p_phase not in ('pre', 'post') then raise exception 'ระบุ Pre หรือ Post'; end if;
+  if (p_phase = 'pre' and not t.pre_open) or (p_phase = 'post' and not t.post_open) then
+    raise exception 'แบบทดสอบ %-test ปิดรับแล้ว', initcap(p_phase);
+  end if;
+  if v_emp = '' or v_name = '' then raise exception 'กรุณากรอกรหัสพนักงานและชื่อ-สกุล'; end if;
+  if jsonb_typeof(p_answers) <> 'array' or jsonb_array_length(p_answers) <> t.total then
+    raise exception 'กรุณาตอบให้ครบทุกข้อ';
+  end if;
+  for i in 0 .. t.total - 1 loop
+    if jsonb_typeof(p_answers -> i) <> 'number' then raise exception 'กรุณาตอบให้ครบทุกข้อ'; end if;
+    v_ans := (p_answers ->> i)::int;
+    if v_ans = (t.questions -> i ->> 'correct')::int then v_score := v_score + 1;
+    else v_wrong := v_wrong || to_jsonb(i); end if;
+  end loop;
+
+  perform pg_advisory_xact_lock(hashtext(t.id::text || p_phase || v_emp));
+  select * into v_last from test_submissions where training_id = t.id and phase = p_phase and emp_id = v_emp
+   order by attempt desc limit 1;
+  if v_last.id is not null then
+    if p_phase = 'pre' then raise exception 'รหัสพนักงาน % ส่ง Pre-test ของรอบนี้ไปแล้ว', v_emp; end if;
+    if 100.0 * v_last.score / v_last.total >= t.pass_percent then raise exception 'ท่านสอบ Post-test ผ่านแล้ว'; end if;
+    if not t.retake then raise exception 'รหัสพนักงาน % ส่ง Post-test ของรอบนี้ไปแล้ว', v_emp; end if;
+  end if;
+  v_att := coalesce(v_last.attempt, 0) + 1;
+  insert into test_submissions (training_id, phase, emp_id, full_name, hospital, department, answers, score, total, attempt)
+  values (t.id, p_phase, v_emp, left(v_name, 120), left(trim(coalesce(p_hospital, '')), 120),
+          left(trim(coalesce(p_dept, '')), 120), p_answers, v_score, t.total, v_att);
+
+  if p_phase = 'pre' then return jsonb_build_object('ok', true, 'phase', 'pre'); end if;
+  v_pass := 100.0 * v_score / t.total >= t.pass_percent;
+  select * into v_pre from test_submissions where training_id = t.id and phase = 'pre' and emp_id = v_emp order by attempt limit 1;
+  return jsonb_build_object('ok', true, 'phase', 'post', 'score', v_score, 'total', t.total, 'attempt', v_att,
+    'percent', round(100.0 * v_score / t.total), 'pass', v_pass, 'pass_percent', t.pass_percent,
+    'retake', t.retake, 'pre_score', v_pre.score,
+    'wrong', case when v_pass then '[]'::jsonb else v_wrong end,
+    'need_survey', v_pass and t.survey_id is not null
+                   and not exists (select 1 from survey_done where training_id = t.id and emp_id = v_emp));
+end $$;
+
+-- แบบประเมินหลัง Post-test (ต้องสอบผ่านแล้ว · ทำได้ครั้งเดียว · คำตอบไม่ผูกกับผู้ตอบ)
+create or replace function public.submit_training_survey(p_code text, p_emp_id text, p_answers jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; sv surveys; v_emp text := upper(trim(coalesce(p_emp_id, ''))); v_clean jsonb;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้'; end if;
+  select * into sv from surveys where id = t.survey_id;
+  if sv.id is null then raise exception 'รอบนี้ไม่มีแบบประเมิน'; end if;
+  if not exists (select 1 from test_submissions where training_id = t.id and phase = 'post' and emp_id = v_emp
+                   and 100.0 * score / total >= t.pass_percent) then
+    raise exception 'ทำแบบประเมินได้หลังสอบ Post-test ผ่านแล้ว';
+  end if;
+  v_clean := public.clean_survey_answers(sv.items, p_answers);
+  begin
+    insert into survey_done (training_id, emp_id) values (t.id, v_emp);
+  exception when unique_violation then raise exception 'ท่านทำแบบประเมินของรอบนี้แล้ว'; end;
+  insert into survey_responses (survey_id, training_id, answers) values (sv.id, t.id, v_clean);
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- แบบประเมินแบบเดี่ยว (?s=รหัส)
+create or replace function public.survey_info(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare sv surveys;
+begin
+  select * into sv from surveys where code = trim(p_code);
+  if sv.id is null then raise exception 'ไม่พบแบบประเมินนี้'; end if;
+  return jsonb_build_object('title', sv.title, 'description', sv.description, 'open', sv.open,
+                            'items', case when sv.open then sv.items end);
+end $$;
+create or replace function public.submit_open_survey(p_code text, p_answers jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare sv surveys;
+begin
+  select * into sv from surveys where code = trim(p_code);
+  if sv.id is null then raise exception 'ไม่พบแบบประเมินนี้'; end if;
+  if not sv.open then raise exception 'แบบประเมินนี้ปิดรับแล้ว'; end if;
+  insert into survey_responses (survey_id, answers) values (sv.id, public.clean_survey_answers(sv.items, p_answers));
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke execute on function public.clean_survey_answers(jsonb, jsonb), public.gen_survey_code() from public, anon;
+grant execute on function public.gen_survey_code() to authenticated;
+revoke execute on function public.set_hospitals(jsonb) from public, anon;
+grant execute on function public.set_hospitals(jsonb) to authenticated;
+grant execute on function public.list_hospitals(), public.test_info(text), public.test_status(text, text),
+  public.submit_test(text, text, text, text, text, text, jsonb), public.submit_training_survey(text, text, jsonb),
+  public.survey_info(text), public.submit_open_survey(text, jsonb) to anon, authenticated;
