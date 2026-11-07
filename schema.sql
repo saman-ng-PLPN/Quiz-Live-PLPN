@@ -957,3 +957,285 @@ grant execute on function public.set_hospitals(jsonb) to authenticated;
 grant execute on function public.list_hospitals(), public.test_info(text), public.test_status(text, text),
   public.submit_test(text, text, text, text, text, text, jsonb), public.submit_training_survey(text, text, jsonb),
   public.survey_info(text), public.submit_open_survey(text, jsonb) to anon, authenticated;
+
+-- =====================================================================
+-- 9) v7: Pre-test แบบเกม (เล่นพร้อมกันทั้งห้อง) → ผลบันทึกเป็น Pre-test ของรอบอบรม
+--    - ผู้เล่นเข้าห้องด้วย รหัสพนักงาน + ชื่อ + โรงพยาบาล + แผนก
+--    - ระหว่างเกมไม่เฉลยข้อที่ถูก (บอกแค่จำนวนคนตอบถูก/ผิด) · เกมปกติยังเฉลยเหมือนเดิม
+--    - จบเกมแล้วบันทึกเป็น Pre-test (นับจำนวนข้อที่ถูก ไม่ใช่คะแนนความเร็ว)
+--    - คนที่มาไม่ทัน ทำ Pre-test แบบทำเองย้อนหลังได้ (เปิดสวิตช์ Pre-test ในหน้ารอบ)
+-- =====================================================================
+alter table public.sessions alter column quiz_id drop not null;
+alter table public.sessions add column if not exists training_id uuid references public.trainings(id) on delete set null;
+create index if not exists sessions_training_idx on public.sessions (training_id) where training_id is not null;
+
+alter table public.players add column if not exists emp_id     text;
+alter table public.players add column if not exists full_name  text;
+alter table public.players add column if not exists hospital   text;
+alter table public.players add column if not exists department text;
+create unique index if not exists players_session_emp on public.players (session_id, emp_id) where emp_id is not null;
+
+-- ที่มาของผล: self = ทำเองผ่านลิงก์ / game = จากเกม Pre-test
+alter table public.test_submissions add column if not exists source text not null default 'self';
+
+-- เก็บเวลาต่อข้อไว้ในสำเนาคำถามของรอบด้วย (ใช้ตอนเปิดเป็นเกม)
+create or replace function public.create_training(p_quiz_id uuid, p_title text, p_pass int default 80)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_quiz quizzes; v_qs jsonb; v_n int; v_code text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into v_quiz from quizzes where id = p_quiz_id;
+  if v_quiz.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  if not (v_quiz.owner_id = auth.uid() or v_quiz.shared or public.is_admin()) then
+    raise exception 'ชุดคำถามนี้เป็นแบบส่วนตัว';
+  end if;
+  select jsonb_agg(jsonb_build_object(
+           'text', text, 'image_url', image_url, 'choices', choices, 'correct', correct_index,
+           'time', time_limit, 'colors', colors, 'images', choice_images) order by position), count(*)
+    into v_qs, v_n from questions where quiz_id = p_quiz_id;
+  if v_n = 0 then raise exception 'ชุดคำถามนี้ยังไม่มีคำถาม'; end if;
+  loop
+    v_code := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from trainings where code = v_code);
+    i := i + 1; if i > 50 then raise exception 'สร้างรหัสไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+  insert into trainings (quiz_id, title, code, pass_percent, questions, total, cover_url)
+  values (p_quiz_id, left(coalesce(nullif(trim(p_title), ''), v_quiz.title), 200), v_code,
+          least(100, greatest(0, coalesce(p_pass, 80))), v_qs, v_n, v_quiz.cover_url)
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'code', v_code);
+end $$;
+
+-- เปิดห้องเกม Pre-test จากรอบอบรม (ถ้ามีห้องที่ยังไม่จบ จะกลับเข้าห้องเดิม)
+create or replace function public.create_pre_game(p_training uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; s sessions; v_qs jsonb; v_pin text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into t from trainings where id = p_training;
+  if t.id is null or not (t.owner_id = auth.uid() or public.is_admin()) then
+    raise exception 'ไม่พบรอบนี้ หรือไม่มีสิทธิ์';
+  end if;
+  select * into s from sessions where training_id = t.id and status <> 'ended' order by created_at desc limit 1;
+  if s.id is not null then
+    if s.host_id <> auth.uid() then
+      raise exception 'มีห้องเกม Pre-test ของรอบนี้เปิดอยู่แล้ว (PIN %) โดยผู้จัดอีกคน', s.pin;
+    end if;
+    return jsonb_build_object('session_id', s.id, 'pin', s.pin, 'resumed', true);
+  end if;
+
+  -- ลำดับข้อตรงกับรอบอบรมเสมอ (ใช้ตรวจคะแนน Pre-test) · รอบเก่าที่ไม่มีเวลาต่อข้อ ใช้เวลาจากชุดคำถาม หรือ 20 วินาที
+  select jsonb_agg(x.q || jsonb_build_object('time', least(120, greatest(5, coalesce(
+           (x.q ->> 'time')::int,
+           (select time_limit from questions where quiz_id = t.quiz_id order by position offset (x.o - 1) limit 1),
+           20)))) order by x.o)
+    into v_qs from jsonb_array_elements(t.questions) with ordinality as x(q, o);
+  if v_qs is null then raise exception 'รอบนี้ยังไม่มีคำถาม'; end if;
+
+  loop
+    v_pin := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from sessions where pin = v_pin and status <> 'ended');
+    i := i + 1;
+    if i > 50 then raise exception 'สร้างรหัสห้องไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+  insert into sessions (quiz_id, host_id, title, pin, questions, total_questions, cover_url, training_id)
+  values (t.quiz_id, auth.uid(), t.title, v_pin, v_qs, jsonb_array_length(v_qs), t.cover_url, t.id)
+  returning id into v_id;
+  return jsonb_build_object('session_id', v_id, 'pin', v_pin);
+end $$;
+
+-- ข้อมูลห้องก่อนเข้าร่วม: เกมปกติ (ใส่ชื่อเล่น) หรือ Pre-test (ใส่รหัสพนักงาน)
+create or replace function public.game_info(p_pin text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare s sessions; t trainings;
+begin
+  select * into s from sessions where pin = trim(p_pin) and status <> 'ended' order by created_at desc limit 1;
+  if s.id is null then raise exception 'ไม่พบห้องเกมนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  if s.training_id is null then return jsonb_build_object('mode', 'game', 'title', s.title); end if;
+  select * into t from trainings where id = s.training_id;
+  return jsonb_build_object('mode', 'pre', 'title', s.title, 'status', s.status, 'cover_url', s.cover_url,
+    'departments', case when jsonb_typeof(t.departments) = 'array' then t.departments else public.list_departments() end,
+    'hospitals', public.list_hospitals());
+end $$;
+
+-- เข้าห้องเกม Pre-test ด้วยรหัสพนักงาน
+create or replace function public.join_pre_game(
+  p_pin text, p_emp_id text, p_name text, p_hospital text, p_dept text, p_avatar text default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare s sessions; p players; v_nick text;
+        v_emp  text := upper(trim(coalesce(p_emp_id, '')));
+        v_name text := regexp_replace(trim(coalesce(p_name, '')), '\s+', ' ', 'g');
+begin
+  if v_emp = '' or v_name = '' then raise exception 'กรุณากรอกรหัสพนักงานและชื่อ-สกุล'; end if;
+  if char_length(v_emp) > 30 then raise exception 'รหัสพนักงานยาวเกินไป'; end if;
+  select * into s from sessions where pin = trim(p_pin) and status <> 'ended' order by created_at desc limit 1;
+  if s.id is null then raise exception 'ไม่พบห้องเกมนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  if s.training_id is null then raise exception 'ห้องนี้เป็นเกมทั่วไป ไม่ต้องใช้รหัสพนักงาน'; end if;
+
+  perform pg_advisory_xact_lock(hashtext(s.id::text || v_emp));
+  -- เข้าซ้ำด้วยรหัส+ชื่อเดิม (เปลี่ยนเครื่อง/ล้างเบราว์เซอร์) → กลับเป็นผู้เล่นเดิม
+  select * into p from players where session_id = s.id and emp_id = v_emp;
+  if p.id is not null then
+    if lower(coalesce(p.full_name, '')) <> lower(v_name) then
+      raise exception 'รหัสพนักงาน % อยู่ในห้องนี้แล้ว', v_emp;
+    end if;
+    return jsonb_build_object('player_id', p.id, 'token', p.token, 'session_id', s.id, 'mode', 'pre',
+                              'nickname', p.nickname, 'avatar', p.avatar, 'title', s.title);
+  end if;
+  if exists (select 1 from test_submissions where training_id = s.training_id and phase = 'pre' and emp_id = v_emp) then
+    raise exception 'รหัสพนักงาน % ทำ Pre-test ของรอบนี้แล้ว', v_emp;
+  end if;
+  if s.status <> 'lobby' then
+    raise exception 'เกมเริ่มไปแล้ว — แจ้งผู้จัดเพื่อทำ Pre-test แบบทำเองหลังจบเกม';
+  end if;
+  if (select count(*) from players where session_id = s.id) >= 300 then raise exception 'ห้องนี้เต็มแล้ว'; end if;
+
+  v_nick := left(v_name, 30);
+  if exists (select 1 from players where session_id = s.id and lower(nickname) = lower(v_nick)) then
+    v_nick := left(v_name, greatest(1, 30 - char_length(v_emp) - 3)) || ' (' || right(v_emp, 26) || ')';
+  end if;
+  insert into players (session_id, nickname, avatar, emp_id, full_name, hospital, department)
+  values (s.id, v_nick, case when p_avatar ~ '^[a-z0-9-]{1,30}$' then p_avatar end, v_emp, left(v_name, 120),
+          left(trim(coalesce(p_hospital, '')), 120), left(trim(coalesce(p_dept, '')), 120))
+  returning * into p;
+  return jsonb_build_object('player_id', p.id, 'token', p.token, 'session_id', s.id, 'mode', 'pre',
+                            'nickname', p.nickname, 'avatar', p.avatar, 'title', s.title);
+end $$;
+
+-- เกมปกติ: ใส่ชื่อเล่น (ห้อง Pre-test ต้องเข้าด้วยรหัสพนักงานผ่าน join_pre_game)
+create or replace function public.join_game(p_pin text, p_nickname text, p_avatar text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare s sessions; v_name text := trim(coalesce(p_nickname, '')); p players;
+begin
+  if char_length(v_name) < 1 or char_length(v_name) > 30 then
+    raise exception 'กรุณาใส่ชื่อ 1-30 ตัวอักษร';
+  end if;
+  select * into s from sessions
+   where pin = trim(p_pin) and status <> 'ended' order by created_at desc limit 1;
+  if s.id is null then raise exception 'ไม่พบห้องเกมนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  if s.training_id is not null then
+    raise exception 'ห้องนี้เป็น Pre-test ต้องเข้าด้วยรหัสพนักงาน — รีเฟรชหน้าแล้วใส่ PIN อีกครั้ง';
+  end if;
+  if (select count(*) from players where session_id = s.id) >= 300 then
+    raise exception 'ห้องนี้เต็มแล้ว';
+  end if;
+  if exists (select 1 from players where session_id = s.id and lower(nickname) = lower(v_name)) then
+    raise exception 'ชื่อนี้มีคนใช้แล้ว ลองชื่ออื่น';
+  end if;
+  insert into players (session_id, nickname, avatar)
+  values (s.id, v_name, case when p_avatar ~ '^[a-z0-9-]{1,30}$' then p_avatar end) returning * into p;
+  return jsonb_build_object('player_id', p.id, 'token', p.token, 'session_id', s.id, 'mode', 'game',
+                            'nickname', p.nickname, 'avatar', p.avatar, 'title', s.title);
+end $$;
+
+-- จบเกม Pre-test: บันทึกผลของผู้เล่นที่ตอบอย่างน้อย 1 ข้อเป็น Pre-test (ใช้ภายใน)
+-- คะแนน = จำนวนข้อที่ถูก · ข้อที่ไม่ได้ตอบนับเป็นผิด · คนที่มีผล Pre-test อยู่แล้วจะไม่ถูกเขียนทับ
+create or replace function public.finish_pre_game(p_session uuid)
+returns int language plpgsql security definer set search_path = public as $$
+declare s sessions; v_n int;
+begin
+  select * into s from sessions where id = p_session;
+  if s.training_id is null or not exists (select 1 from trainings where id = s.training_id) then return 0; end if;
+  insert into test_submissions (training_id, phase, emp_id, full_name, hospital, department,
+                                answers, score, total, attempt, source)
+  select s.training_id, 'pre', p.emp_id, left(coalesce(p.full_name, p.nickname), 120),
+         coalesce(p.hospital, ''), coalesce(p.department, ''),
+         (select jsonb_agg(a.choice order by g.i)
+            from generate_series(0, s.total_questions - 1) as g(i)
+            left join answers a on a.player_id = p.id and a.question_index = g.i),
+         (select count(*) from answers a where a.player_id = p.id and a.is_correct),
+         s.total_questions, 1, 'game'
+    from players p
+   where p.session_id = s.id and p.emp_id is not null
+     and exists (select 1 from answers a where a.player_id = p.id)
+     and not exists (select 1 from test_submissions x
+                      where x.training_id = s.training_id and x.phase = 'pre' and x.emp_id = p.emp_id)
+  on conflict do nothing;
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
+
+-- ข้อถัดไป / จบเกม — ถ้าเป็นเกม Pre-test บันทึกผลตอนจบ
+create or replace function public.host_next(p_session uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare s sessions; v_idx int; v_time int;
+begin
+  select * into s from sessions where id = p_session and host_id = auth.uid() for update;
+  if s.id is null then raise exception 'ไม่พบห้องเกม หรือไม่มีสิทธิ์'; end if;
+  if s.status = 'question' then raise exception 'ต้องเฉลยข้อนี้ก่อน'; end if;
+  if s.status = 'ended' then return jsonb_build_object('status', 'ended'); end if;
+
+  v_idx := s.current_index + 1;
+  if v_idx >= s.total_questions then
+    update sessions set status = 'ended' where id = p_session;
+    return jsonb_build_object('status', 'ended', 'saved', public.finish_pre_game(p_session));
+  end if;
+  v_time := (s.questions -> v_idx ->> 'time')::int;
+  update sessions
+     set status = 'question', current_index = v_idx,
+         question_started_at = now(), question_ends_at = now() + make_interval(secs => v_time)
+   where id = p_session;
+  return jsonb_build_object('status', 'question', 'index', v_idx, 'remaining', v_time);
+end $$;
+
+create or replace function public.host_end(p_session uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update sessions set status = 'ended' where id = p_session and host_id = auth.uid() and status <> 'ended';
+  if found then perform public.finish_pre_game(p_session); end if;
+end $$;
+
+-- สถานะผู้เล่น: เกม Pre-test ไม่ส่งข้อที่ถูก ส่งแค่จำนวนคนตอบถูก/ทั้งหมด
+create or replace function public.player_state(p_player uuid, p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare p players; s sessions; q jsonb; a answers; v_rank int; v_n int; r jsonb; v_pre boolean;
+        v_right int; v_ans int;
+begin
+  select * into p from players where id = p_player and token = p_token;
+  if p.id is null then return jsonb_build_object('status', 'kicked'); end if;
+  select * into s from sessions where id = p.session_id;
+  v_pre := s.training_id is not null;
+
+  r := jsonb_build_object('status', s.status, 'title', s.title, 'index', s.current_index,
+                          'total', s.total_questions, 'nickname', p.nickname, 'avatar', p.avatar, 'score', p.score,
+                          'cover_url', s.cover_url, 'mode', case when v_pre then 'pre' else 'game' end);
+  if s.current_index >= 0 then
+    q := s.questions -> s.current_index;
+    select * into a from answers where player_id = p.id and question_index = s.current_index;
+  end if;
+
+  if s.status = 'question' then
+    r := r || jsonb_build_object(
+      'question', q ->> 'text', 'image_url', q ->> 'image_url', 'choices', q -> 'choices',
+      'colors', q -> 'colors', 'images', q -> 'images', 'time', (q ->> 'time')::int,
+      'remaining', greatest(0, extract(epoch from s.question_ends_at - now())),
+      'answered', a.id is not null, 'my_choice', a.choice);
+  elsif s.status in ('reveal', 'ended') then
+    select count(*) + 1 into v_rank from players where session_id = s.id and score > p.score;
+    select count(*) into v_n from players where session_id = s.id;
+    r := r || jsonb_build_object('rank', v_rank, 'players', v_n);
+    if s.status = 'reveal' then
+      r := r || jsonb_build_object(
+        'question', q ->> 'text', 'choices', q -> 'choices',
+        'correct', case when v_pre then null else (q ->> 'correct')::int end,
+        'colors', q -> 'colors', 'images', q -> 'images',
+        'answered', a.id is not null, 'my_choice', a.choice,
+        'is_correct', coalesce(a.is_correct, false), 'points', p.last_points);
+      if v_pre then
+        select count(*) filter (where is_correct), count(*) into v_right, v_ans
+          from answers where session_id = s.id and question_index = s.current_index;
+        r := r || jsonb_build_object('room_right', v_right, 'room_answered', v_ans);
+      end if;
+    elsif v_pre then
+      select count(*) filter (where is_correct), count(*) into v_right, v_ans from answers where player_id = p.id;
+      r := r || jsonb_build_object('my_right', v_right, 'my_answered', v_ans);
+    end if;
+  end if;
+  return r;
+end $$;
+
+revoke execute on function public.finish_pre_game(uuid) from public, anon, authenticated;
+revoke execute on function public.create_pre_game(uuid) from public, anon;
+grant execute on function public.create_pre_game(uuid) to authenticated;
+grant execute on function public.game_info(text), public.join_pre_game(text, text, text, text, text, text)
+  to anon, authenticated;

@@ -72,6 +72,13 @@ body.player.good{background:var(--good)} body.player.bad{background:var(--bad)}
 #pin{font-size:32px;letter-spacing:10px;font-weight:700}
 .jcard .btn{padding:15px;font-size:19px}
 .host-link{text-align:center;opacity:.7;font-size:14px}
+.jcard .prebox{display:grid;gap:12px}
+.jcard .prebox[hidden],.jcard #nickbox[hidden]{display:none}
+.jcard .prebox .seg{flex-wrap:wrap}
+.jcard .prebox .seg label{margin:0;color:var(--ink);font-size:15px;min-width:40%}
+.jcard .prebox .inp{font-size:17px;text-align:left}
+.prenote{background:#eef4f9;border:1px solid #c9def5;border-radius:12px;padding:10px 12px;font-size:14px;color:var(--ink);line-height:1.5}
+.roomline{font-size:15px;opacity:.9}
 
 .pscreen{min-height:100dvh;display:flex;flex-direction:column;gap:14px;max-width:560px;margin:auto;
   padding:14px 16px calc(16px + env(safe-area-inset-bottom))}
@@ -570,8 +577,9 @@ const Player = {
       <form class="jcard" id="jf" autocomplete="off">
         <label for="pin">รหัสห้อง (PIN)</label>
         <input id="pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" value="${esc(pin || '')}">
-        <label for="nick">ชื่อที่จะแสดงบนจอ</label>
-        <div class="avpick"><span id="avprev"></span><input id="nick" maxlength="30" placeholder="เช่น อ๊อฟ IT"></div>
+        <div id="nickbox" style="display:grid;gap:12px"><label for="nick">ชื่อที่จะแสดงบนจอ</label>
+        <div class="avpick"><span id="avprev"></span><input id="nick" maxlength="30" placeholder="เช่น อ๊อฟ IT"></div></div>
+        <div class="prebox" id="prebox" hidden></div>
         <label>เลือกรูปประจำตัว</label>
         <div class="avtabs"><button type="button" data-g="สัตว์น่ารัก">🐾 สัตว์น่ารัก</button><button type="button" data-g="บุคลากร รพ.">🏥 บุคลากร รพ.</button></div>
         <div class="avgrid" id="avgrid"></div>
@@ -596,18 +604,71 @@ const Player = {
     $('#avgrid').onclick = e => { const b = e.target.closest('[data-av]'); if (b) { avatar = b.dataset.av; drawAv(); } };
     if (!AVL.length) $$('.avtabs, #avgrid').forEach(el => el.hidden = true);
     drawAv();
-    pinEl.oninput = () => { pinEl.value = pinEl.value.replace(/\D/g, '').slice(0, 6); };
+    // ห้อง Pre-test: เปลี่ยนช่องชื่อเป็น รหัสพนักงาน + ชื่อ + รพ. + แผนก
+    let info = null, infoPin = '';
+    const checkPin = async () => {
+      const p = pinEl.value.trim();
+      if (p.length !== 6) { info = null; infoPin = ''; return showMode(); }
+      if (p === infoPin) return;
+      infoPin = p;
+      try { const r = await rpc('game_info', { p_pin: p }); if (pinEl.value.trim() === p) info = r; }
+      catch (e) { if (pinEl.value.trim() === p) info = null; }
+      showMode();
+    };
+    const showMode = () => {
+      const pre = !!(info && info.mode === 'pre'), box = $('#prebox');
+      $('#nickbox').hidden = pre; box.hidden = !pre;
+      $('#jbtn').textContent = pre ? 'เข้าร่วม Pre-test' : 'เข้าร่วมเกม';
+      if (!pre) { box.innerHTML = ''; return; }
+      if (box.dataset.pin === infoPin) return;
+      box.dataset.pin = infoPin;
+      const me = load('quizlive.tester') || {}, depts = info.departments || [], hosps = info.hospitals || [];
+      box.innerHTML = `<div class="prenote">📝 <b>${esc(info.title)}</b><br>เกมนี้เป็น <b>Pre-test</b> ผลบันทึกด้วยรหัสพนักงาน · ระหว่างเกมไม่เฉลยข้อที่ถูก</div>
+        <div class="fld"><label for="j-emp">รหัสพนักงาน *</label><input class="inp" id="j-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters"></div>
+        <div class="fld"><label for="j-name">ชื่อ-นามสกุล *</label><input class="inp" id="j-name" maxlength="120" value="${esc(me.name || '')}"></div>
+        ${hosps.length ? `<div class="fld"><label>โรงพยาบาล *</label><div class="seg">${hosps.map(h =>
+          `<label><input type="radio" name="jhosp" value="${esc(h)}" ${h === me.hospital || hosps.length === 1 ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div>` : ''}
+        <div class="fld"><label for="j-dept">แผนก *</label>${depts.length
+          ? `<select class="inp" id="j-dept"><option value="">— เลือกแผนก —</option>${depts.map(d => `<option ${d === me.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+               <option value="__other" ${me.dept && !depts.includes(me.dept) ? 'selected' : ''}>อื่นๆ (พิมพ์เอง)</option></select>
+             <input class="inp" id="j-dept-other" maxlength="120" placeholder="พิมพ์ชื่อแผนก" value="${esc(me.dept && !depts.includes(me.dept) ? me.dept : '')}">`
+          : `<input class="inp" id="j-dept" maxlength="120" value="${esc(me.dept || '')}">`}</div>`;
+      const sel = $('#j-dept'), other = $('#j-dept-other');
+      if (other) { const sync = () => { other.hidden = sel.value !== '__other'; }; sel.onchange = () => { sync(); if (!other.hidden) other.focus(); }; sync(); }
+    };
+    pinEl.oninput = () => { pinEl.value = pinEl.value.replace(/\D/g, '').slice(0, 6); checkPin(); };
+    if (pin) checkPin();
     $('#jf').onsubmit = async ev => {
       ev.preventDefault();
-      const p = pinEl.value.trim(), n = nickEl.value.trim();
+      const p = pinEl.value.trim();
       if (p.length !== 6) return toast('รหัสห้องต้องเป็นตัวเลข 6 หลัก', true);
-      if (!n) return toast('กรุณาใส่ชื่อ', true);
-      const btn = $('#jbtn'); btn.disabled = true; btn.textContent = 'กำลังเข้าห้อง…';
+      const btn = $('#jbtn'), label = btn.textContent;
+      if (infoPin !== p) await checkPin();
+      const pre = !!(info && info.mode === 'pre');
+      let who = null;
+      if (pre) {
+        const sel = $('#j-dept'), other = $('#j-dept-other'), h = $('input[name=jhosp]:checked');
+        who = { emp_id: $('#j-emp').value.trim().toUpperCase(), name: $('#j-name').value.trim(),
+                dept: sel.value === '__other' ? other.value.trim() : sel.value.trim(), hospital: h ? h.value : '' };
+        if (!who.emp_id || !who.name || !who.dept || ((info.hospitals || []).length && !who.hospital)) return toast('กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *', true);
+      } else if (!nickEl.value.trim()) return toast('กรุณาใส่ชื่อ', true);
+      btn.disabled = true; btn.textContent = 'กำลังเข้าห้อง…';
       try {
-        const r = await rpc('join_game', { p_pin: p, p_nickname: n, p_avatar: avatar });
-        try { localStorage.setItem('quizlive.nick', n); if (avatar) localStorage.setItem('quizlive.avatar', avatar); } catch (e) {}
+        let r;
+        if (pre) {
+          r = await rpc('join_pre_game', { p_pin: p, p_emp_id: who.emp_id, p_name: who.name, p_hospital: who.hospital, p_dept: who.dept, p_avatar: avatar });
+          save('quizlive.tester', { ...(load('quizlive.tester') || {}), ...who });
+        } else {
+          const n = nickEl.value.trim();
+          r = await rpc('join_game', { p_pin: p, p_nickname: n, p_avatar: avatar });
+          try { localStorage.setItem('quizlive.nick', n); } catch (e) {}
+        }
+        try { if (avatar) localStorage.setItem('quizlive.avatar', avatar); } catch (e) {}
         const st = { ...r, pin: p }; save(this.KEY, st); this.enter(st);
-      } catch (e) { toast(errMsg(e), true); btn.disabled = false; btn.textContent = 'เข้าร่วมเกม'; }
+      } catch (e) {
+        toast(errMsg(e), true); btn.disabled = false; btn.textContent = label;
+        if (/Pre-test ต้องเข้าด้วยรหัสพนักงาน/.test(errMsg(e))) { infoPin = ''; checkPin(); }
+      }
     };
   },
   enter(st) {
@@ -656,6 +717,7 @@ const Player = {
         ${s.cover_url ? `<img class="pcover" src="${esc(s.cover_url)}" alt="">` : ''}
         <p>เข้าห้องเรียบร้อย ✓</p>${avatarHTML(s.avatar, s.nickname, 'lg')}<div class="namechip">${esc(s.nickname)}</div>
         <h1 style="font-size:24px">${esc(s.title)}</h1>
+        ${s.mode === 'pre' ? '<p class="roomline">📝 Pre-test แบบเกม · ระหว่างเกมไม่เฉลยข้อที่ถูก</p>' : ''}
         <div class="dots"><span></span><span></span><span></span></div>
         <p>ดูชื่อตัวเองบนจอ แล้วรอผู้จัดเริ่มเกม</p></div>
         <button class="linkbtn" id="quit">ออกจากห้อง</button></main>`;
@@ -683,9 +745,11 @@ const Player = {
     if (s.status === 'reveal') {
       const ok = s.is_correct;
       setBody('player ' + (ok ? 'good' : 'bad'));
+      const pre = s.mode === 'pre';   // Pre-test: ไม่บอกข้อที่ถูก บอกแค่จำนวนคนตอบถูก
       const head = ok ? `<h1>ถูกต้อง! 🎉</h1><div class="bignum">+${fmt(s.points)}</div>`
-                      : `<h1>${s.answered ? 'ยังไม่ถูก' : 'ไม่ทันตอบ'}</h1><p>คำตอบที่ถูกคือ</p>${chosenHTML(s, s.correct)}`;
-      app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">${avatarHTML(s.avatar, s.nickname, 'lg')}${head}
+                      : `<h1>${s.answered ? 'ยังไม่ถูก' : 'ไม่ทันตอบ'}</h1>${pre ? '' : `<p>คำตอบที่ถูกคือ</p>${chosenHTML(s, s.correct)}`}`;
+      const room = pre ? `<p class="roomline">ทั้งห้องตอบถูก <b>${s.room_right}</b> จาก ${s.players} คน<br><small>เฉลยหลังอบรม</small></p>` : '';
+      app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">${avatarHTML(s.avatar, s.nickname, 'lg')}${head}${room}
         <div class="stat"><div><small>คะแนนรวม</small><strong>${fmt(s.score)}</strong></div>
         <div><small>อันดับ</small><strong>${s.rank}</strong> / ${s.players}</div></div>
         <p>รอข้อถัดไป…</p></div></main>`;
@@ -696,8 +760,11 @@ const Player = {
       app.innerHTML = `<main class="pscreen">${bar}<div class="pmid">
         <p>จบเกมแล้ว</p><div class="avwrap">${avatarHTML(s.avatar, s.nickname, 'xl')}<span class="medal">${medal}</span></div>
         <h1>อันดับ ${s.rank} จาก ${s.players} คน</h1>
-        <div class="stat"><div><small>คะแนนรวม</small><strong>${fmt(s.score)}</strong></div></div>
-        <p>ขอบคุณที่ร่วมสนุกครับ</p>
+        <div class="stat"><div><small>คะแนนรวม</small><strong>${fmt(s.score)}</strong></div>
+          ${s.mode === 'pre' && s.my_right != null ? `<div><small>ตอบถูก</small><strong>${s.my_right}</strong> / ${s.total}</div>` : ''}</div>
+        ${s.mode !== 'pre' ? '<p>ขอบคุณที่ร่วมสนุกครับ</p>' : s.my_answered
+          ? '<p>✓ บันทึกผล Pre-test แล้ว<br><small>หลังอบรมสแกน QR ทำ Post-test ด้วยรหัสพนักงานเดิม</small></p>'
+          : '<p>ท่านยังไม่ได้ตอบข้อใดเลย จึงยังไม่มีผล Pre-test<br><small>แจ้งผู้จัดเพื่อทำ Pre-test แบบทำเอง</small></p>'}
         <button class="btn sun lg" id="again">เข้าเกมใหม่</button></div></main>`;
       $('#again').onclick = () => this.leave();
     }
@@ -735,7 +802,7 @@ const Admin = {
     const [qz, live, adm] = await Promise.all([
       sb.from('quizzes').select('id,title,department,description,cover_url,shared,owner_id,owner_email,updated_at,questions(count)')
         .order('updated_at', { ascending: false }),
-      sb.from('sessions').select('id,title,pin,status,created_at').neq('status', 'ended')
+      sb.from('sessions').select('id,title,pin,status,created_at,training_id').neq('status', 'ended')
         .eq('host_id', user.id).order('created_at', { ascending: false }),
       sb.rpc('is_admin')
     ]);
@@ -753,7 +820,7 @@ const Admin = {
   renderList() {
     const u = this.user;
     const liveHTML = this.live.length ? `<div class="live"><b>ห้องที่ยังเปิดอยู่</b>${this.live.map(s => `
-      <div class="it"><span class="grow">${esc(s.title)} · PIN <b>${esc(s.pin)}</b></span>
+      <div class="it"><span class="grow">${s.training_id ? '📝 Pre-test · ' : ''}${esc(s.title)} · PIN <b>${esc(s.pin)}</b></span>
         <a class="btn sm" href="#host/${s.id}">กลับไปที่ห้อง</a>
         <button class="btn danger sm" data-close="${s.id}">ปิดห้อง</button></div>`).join('')}</div>` : '';
     app.innerHTML = adminShell(u, `
@@ -802,7 +869,8 @@ const Admin = {
       b.onclick = () => { this.tab = b.dataset.tab; this.renderList(); }; });
     $('#q').oninput = e => { this.q = e.target.value; this.renderCards(); };
     $$('[data-close]').forEach(b => b.onclick = async () => {
-      if (!confirm('ปิดห้องนี้? ผู้เล่นจะเห็นว่าจบเกม')) return;
+      const pre = this.live.some(s => s.id === b.dataset.close && s.training_id);
+      if (!confirm(pre ? 'ปิดห้องนี้? ผลที่ตอบแล้วจะบันทึกเป็น Pre-test' : 'ปิดห้องนี้? ผู้เล่นจะเห็นว่าจบเกม')) return;
       try { await rpc('host_end', { p_session: b.dataset.close }); this.list(); } catch (e) { toast(errMsg(e), true); }
     });
     this.renderCards();
@@ -1150,7 +1218,7 @@ const Host = {
         <a class="btn sun" href="#admin">กลับหน้าผู้จัด</a></div></div>`;
       return;
     }
-    Object.assign(this, { sid, s, players: new Map(), answers: new Map(), phase: s.status,
+    Object.assign(this, { sid, s, pre: !!s.training_id, players: new Map(), answers: new Map(), phase: s.status,
                           deadline: s.question_ends_at ? Date.parse(s.question_ends_at) : 0,
                           revealing: false, prev: new Map() });
     await Promise.all([this.loadPlayers(), this.loadAnswers()]);
@@ -1199,14 +1267,14 @@ const Host = {
   joinUrl() { return this.joinBase() + '?pin=' + this.s.pin; },
   topbar(extra = '') {
     return `<div class="stg-top"><span class="brand">${brandHTML()}</span>
-      <span class="pill">${esc(this.s.title)}</span><span class="pill sun">PIN ${esc(this.s.pin)}</span>${extra}
+      <span class="pill">${esc(this.s.title)}</span>${this.pre ? '<span class="pill">📝 Pre-test</span>' : ''}<span class="pill sun">PIN ${esc(this.s.pin)}</span>${extra}
       <div class="stg-actions"><button class="btn ghost sm" id="fs">⛶ เต็มจอ</button>
       ${this.phase !== 'ended' ? '<button class="btn ghost sm" id="endg">จบเกม</button>' : ''}</div></div>`;
   },
   bindTop() {
     $('#fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
     const e = $('#endg'); if (e) e.onclick = async () => {
-      if (!confirm('จบเกมตอนนี้เลย?')) return;
+      if (!confirm(this.pre ? 'จบเกมตอนนี้เลย?\nผลที่ตอบไปแล้วจะบันทึกเป็น Pre-test (ข้อที่ยังไม่ถึงนับเป็นตอบผิด)' : 'จบเกมตอนนี้เลย?')) return;
       try { await rpc('host_end', { p_session: this.sid }); this.s.status = 'ended'; this.phase = 'ended';
         await this.loadPlayers(); this.broadcast(); this.render(); } catch (err) { toast(errMsg(err), true); }
     };
@@ -1223,7 +1291,8 @@ const Host = {
           ${this.s.cover_url ? `<img class="lobby-cover" src="${esc(this.s.cover_url)}" alt="">` : ''}
           <p>สแกน QR หรือเปิดเว็บด้วยมือถือ</p>
           <div class="url">${esc(this.joinBase().replace(/^https?:\/\//, '').replace(/\/$/, ''))}</div>
-          <p>แล้วใส่รหัสห้อง</p><div class="pin">${esc(this.s.pin.slice(0, 3))} ${esc(this.s.pin.slice(3))}</div></div>
+          <p>แล้วใส่รหัสห้อง</p><div class="pin">${esc(this.s.pin.slice(0, 3))} ${esc(this.s.pin.slice(3))}</div>
+          ${this.pre ? '<p>📝 <b>Pre-test</b> · เข้าด้วยรหัสพนักงาน · ระหว่างเกมไม่เฉลยข้อที่ถูก</p>' : ''}</div>
         <div class="qrcell"><div class="qrbox" id="qr"></div><div class="qrcap">📱 สแกนเพื่อเข้าร่วม</div></div></div>
       <div class="lobby-bar"><span class="count"><b id="pc">0</b> คนเข้าห้องแล้ว</span><span class="grow"></span>
         <span style="opacity:.6;font-size:14px">แตะชื่อเพื่อนำออก</span>
@@ -1321,6 +1390,12 @@ const Host = {
   answerBar() {
     const q = this.q(); if (!q) return '';
     let right = 0; for (const c of this.answers.values()) if (c === q.correct) right++;
+    if (this.pre) {   // Pre-test: ไม่เฉลยข้อที่ถูก บอกแค่จำนวน
+      const n = this.players.size, ans = this.answers.size;
+      return `<div class="ansbar"><span class="lbl">ข้อ ${this.s.current_index + 1} · Pre-test ไม่เฉลย</span>
+        <span class="lbl">✓ ตอบถูก <b>${right}</b> คน</span><span class="lbl">✗ ตอบผิด <b>${ans - right}</b> คน</span>
+        ${n > ans ? `<span class="lbl">ไม่ทันตอบ <b>${n - ans}</b> คน</span>` : ''}</div>`;
+    }
     const img = imgAt(q.images, q.correct);
     return `<div class="ansbar"><span class="lbl">เฉลยข้อ ${this.s.current_index + 1}</span>
       <span class="anschip" style="${chipStyle(q.colors, q.correct)}"><b>${LETTERS[q.correct]}</b>
@@ -1365,8 +1440,9 @@ const Host = {
           <div class="sc">${fmt(p.score)} คะแนน</div><div class="block">${rank[i]}</div></div>` : '').join('')}</div>
         ${list.length > 3 ? `<div class="rest">${list.slice(3, 30).map((p, i) => `<span>${avatarHTML(p.avatar, p.nickname, 'sm')}${i + 4}. ${esc(p.nickname)} · ${fmt(p.score)}</span>`).join('')}</div>` : ''}
         <div class="row" style="justify-content:flex-end;margin-top:12px">
+          ${this.pre ? '<span class="grow" style="opacity:.8">✓ บันทึกผลเป็น Pre-test ของรอบแล้ว</span>' : ''}
           <button class="btn ghost" id="csv">⬇ ดาวน์โหลดผล (CSV)</button>
-          <a class="btn sun" href="#admin">กลับหน้าผู้จัด</a></div></div></div>`;
+          ${this.pre ? `<a class="btn sun" href="#training/${this.s.training_id}">ดูรายงาน Pre/Post →</a>` : '<a class="btn sun" href="#admin">กลับหน้าผู้จัด</a>'}</div></div></div>`;
     this.bindTop();
     $('#csv').onclick = () => this.csv();
   },
@@ -1728,6 +1804,8 @@ const Training = {
     const sv = await sb.from('surveys').select('id,title,owner_id,owner_email').order('updated_at', { ascending: false });
     this.surveys = sv.data || [];
     await this.loadAll();
+    const g = await sb.from('sessions').select('id,pin').eq('training_id', id).neq('status', 'ended').order('created_at', { ascending: false }).limit(1);
+    this.game = (g.data || [])[0] || null;
     this.render();
     const poll = setInterval(async () => { const n = this.subs.length + this.resp.length; await this.loadAll(); if (this.subs.length + this.resp.length !== n) this.renderBody(); }, 8000);
     onLeave(() => clearInterval(poll));
@@ -1760,6 +1838,9 @@ const Training = {
         <label class="switch"><input type="checkbox" id="sw-pre" ${t.pre_open ? 'checked' : ''}> <span>รับคำตอบ <b>Pre-test</b> (ก่อนอบรม)</span></label>
         <label class="switch"><input type="checkbox" id="sw-post" ${t.post_open ? 'checked' : ''}> <span>รับคำตอบ <b>Post-test</b> (หลังอบรม)</span></label>
         <p class="hint">ใช้ลิงก์/QR เดียวกันทั้งก่อน-หลังอบรมและแบบประเมิน ระบบพาไปขั้นตอนที่ถูกต้องจากรหัสพนักงาน</p>
+        <div class="linkbox" style="background:#fff8e3"><span class="grow"><b>🎮 Pre-test แบบเกม</b> เล่นพร้อมกันบนจอใหญ่ · ไม่เฉลยระหว่างเกม · ผลบันทึกเป็น Pre-test
+          <br><small class="hint">คนที่มาไม่ทัน: หลังจบเกมเปิดสวิตช์ Pre-test ให้ทำเองผ่าน QR ด้านบน</small></span>
+          <button class="btn sun sm" id="pregame">${this.game ? `กลับไปที่ห้องเกม (PIN ${esc(this.game.pin)})` : 'เริ่มเกม Pre-test'}</button></div>
       </div>
       <details class="tcard"><summary style="cursor:pointer;font-weight:600">ตั้งค่าการสอบและแบบประเมิน</summary>
         <label class="switch"><input type="checkbox" id="sw-retake" ${t.retake ? 'checked' : ''}> <span>Post-test <b>สอบซ้ำได้จนกว่าจะผ่าน</b> (เห็นข้อที่ผิด ไม่เห็นเฉลย)</span></label>
@@ -1791,6 +1872,18 @@ const Training = {
       Object.assign(this.t, patch); toast('บันทึกแล้ว'); return true;
     };
     $('#sw-pre').onchange = e => upd({ pre_open: e.target.checked }, e.target);
+    $('#pregame').onclick = async e => {
+      const b = e.currentTarget;
+      if (!this.game) {
+        if (this.subs.some(x => x.phase === 'pre') && !confirm('รอบนี้มีผล Pre-test แล้วบางส่วน คนที่มีผลแล้วจะเข้าเกมไม่ได้ เริ่มเกมต่อ?')) return;
+        if (this.t.pre_open && confirm('ปิดรับ Pre-test แบบทำเองไว้ระหว่างเล่นเกม? (แนะนำ — เปิดอีกครั้งหลังจบเกมสำหรับคนที่มาไม่ทัน)')) {
+          if (await upd({ pre_open: false })) $('#sw-pre').checked = false;
+        }
+      }
+      b.disabled = true;
+      try { const r = await rpc('create_pre_game', { p_training: this.id }); location.hash = '#host/' + r.session_id; }
+      catch (err) { toast(errMsg(err), true); b.disabled = false; }
+    };
     $('#sw-post').onchange = e => upd({ post_open: e.target.checked }, e.target);
     $('#sw-retake').onchange = e => upd({ retake: e.target.checked }, e.target);
     $('#sw-shuffle').onchange = e => {
@@ -1891,7 +1984,7 @@ const Training = {
       </div>${c.rows.length ? '' : '<div class="empty">ยังไม่มีผู้ส่งแบบทดสอบ</div>'}`;
     } else if (this.tab === 'people') {
       const k = this.q.toLowerCase(), list = c.rows.filter(r => !k || (r.emp_id + r.name + r.dept + (r.hosp || '')).toLowerCase().includes(k));
-      const cell = s => s ? `${s.score}/${s.total} <button class="xbtn" data-del="${s.id}" title="ลบผลนี้">✕</button>` : '–';
+      const cell = s => s ? `${s.source === 'game' ? '<span title="จากเกม Pre-test">🎮</span> ' : ''}${s.score}/${s.total} <button class="xbtn" data-del="${s.id}" title="ลบผลนี้">✕</button>` : '–';
       box.innerHTML = `<input class="search" id="pq" placeholder="ค้นหารหัส / ชื่อ / แผนก" value="${esc(this.q)}" style="margin-bottom:10px">
         <div class="tblwrap"><table class="rep"><tr><th>รหัส</th><th>ชื่อ-สกุล</th>${multiH ? '<th>รพ.</th>' : ''}<th>แผนก</th><th class="num">Pre</th>
           <th class="num">Post ครั้งแรก</th><th class="num">Post ล่าสุด</th><th class="num">ครั้ง</th><th class="num">เปลี่ยนแปลง*</th><th>ผล</th>${this.t.survey_id ? '<th>ประเมิน</th>' : ''}</tr>
@@ -1901,7 +1994,7 @@ const Training = {
           <td class="num">${r.pre && r.post1 ? sgn(r.post1.score - r.pre.score) : '–'}</td>
           <td>${r.passed == null ? '<span class="hint">ยังไม่ทำ Post</span>' : r.passed ? `<span class="up">ผ่าน</span>` : '<span class="down">ยังไม่ผ่าน</span>'}</td>
           ${this.t.survey_id ? `<td>${r.survey ? '✓' : ''}</td>` : ''}</tr>`).join('')}
-        </table></div>${list.length ? '<p class="hint">* เปลี่ยนแปลง = Post ครั้งแรก − Pre · ✕ ลบผลครั้งนั้นเพื่อให้ทำใหม่</p>' : '<div class="empty">ไม่มีข้อมูล</div>'}`;
+        </table></div>${list.length ? '<p class="hint">* เปลี่ยนแปลง = Post ครั้งแรก − Pre · 🎮 = Pre-test จากเกม · ✕ ลบผลครั้งนั้นเพื่อให้ทำใหม่</p>' : '<div class="empty">ไม่มีข้อมูล</div>'}`;
       $('#pq').oninput = e => { this.q = e.target.value; const pos = e.target.selectionStart; this.renderBody(); const el = $('#pq'); el.focus(); el.setSelectionRange(pos, pos); };
       $$('[data-del]', box).forEach(b => b.onclick = async () => {
         if (!confirm('ลบผลครั้งนี้? ผู้ทำจะส่งใหม่ได้')) return;
@@ -1962,9 +2055,10 @@ const Training = {
       ['คะแนนเฉลี่ย Pre (%)', c.preAvg ?? ''], ['คะแนนเฉลี่ย Post ครั้งแรก (%)', c.postAvg ?? ''], ['เพิ่มขึ้นเฉลี่ย (%)', c.gain ?? ''],
       ['ผ่านเกณฑ์แล้ว (คน)', c.passN], ['ผ่านในครั้งแรก (คน)', c.passFirstN], ['จำนวนครั้งเฉลี่ยจนผ่าน', c.avgAttempts ?? ''],
       ...(t.survey_id ? [['ทำแบบประเมิน (คน)', c.surveyN]] : [])]);
-    add('รายคน', [['รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'Pre คะแนน', 'Pre %', 'Post ครั้งแรก', 'Post ครั้งแรก %', 'Post ล่าสุด', 'จำนวนครั้ง',
+    add('รายคน', [['รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'Pre คะแนน', 'Pre %', 'Pre ทำแบบ', 'Post ครั้งแรก', 'Post ครั้งแรก %', 'Post ล่าสุด', 'จำนวนครั้ง',
       'เปลี่ยนแปลง (Post1−Pre)', 'ผล', 'ทำแบบประเมิน', 'เวลาส่ง Pre', 'เวลาส่ง Post ล่าสุด']]
-      .concat(c.rows.map(r => [r.emp_id, r.name, r.hosp || '', r.dept, r.pre ? r.pre.score : '', r.prePct ?? '', r.post1 ? r.post1.score : '', r.post1Pct ?? '',
+      .concat(c.rows.map(r => [r.emp_id, r.name, r.hosp || '', r.dept, r.pre ? r.pre.score : '', r.prePct ?? '',
+        r.pre ? (r.pre.source === 'game' ? 'เกม' : 'ทำเอง') : '', r.post1 ? r.post1.score : '', r.post1Pct ?? '',
         r.postL ? r.postL.score : '', r.attempts || '', r.pre && r.post1 ? r.post1.score - r.pre.score : '',
         r.passed == null ? 'ยังไม่ทำ Post' : r.passed ? 'ผ่าน' : 'ยังไม่ผ่าน', t.survey_id ? (r.survey ? 'ทำแล้ว' : '') : '',
         r.pre ? new Date(r.pre.submitted_at).toLocaleString('th-TH') : '', r.postL ? new Date(r.postL.submitted_at).toLocaleString('th-TH') : ''])));
@@ -1974,8 +2068,8 @@ const Training = {
       .concat(c.items.map(it => [it.n, it.text, it.choices[it.correct] || '(รูป)', it.pre.pct ?? '', it.post.pct ?? '',
         it.post.wrong >= 0 ? (it.choices[it.post.wrong] || '(รูป)') : '', it.post.wrongN || ''])));
     add('คำตอบดิบ', [['ครั้ง', 'สอบครั้งที่', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'คะแนน', ...t.questions.map((q, i) => `ข้อ ${i + 1}`)]]
-      .concat(this.subs.map(s => [s.phase === 'pre' ? 'Pre' : 'Post', s.attempt, s.emp_id, s.full_name, s.hospital || '', s.department, s.score,
-        ...s.answers.map((a, i) => (t.questions[i].choices[a] ?? '') + (a === t.questions[i].correct ? ' ✓' : ''))])));
+      .concat(this.subs.map(s => [s.phase === 'pre' ? (s.source === 'game' ? 'Pre (เกม)' : 'Pre') : 'Post', s.attempt, s.emp_id, s.full_name, s.hospital || '', s.department, s.score,
+        ...s.answers.map((a, i) => a == null ? '(ไม่ทันตอบ)' : (t.questions[i].choices[a] || '(รูป)') + (a === t.questions[i].correct ? ' ✓' : ''))])));
     if (t.survey_id) surveySheets(X, wb, this.svItems || [], this.resp, add);
     X.writeFile(wb, `PrePost-${t.title}-${new Date().toISOString().slice(0, 10)}.xlsx`.replace(/[\\/:*?"<>|]/g, '_'));
   }
