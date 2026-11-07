@@ -1239,3 +1239,56 @@ revoke execute on function public.create_pre_game(uuid) from public, anon;
 grant execute on function public.create_pre_game(uuid) to authenticated;
 grant execute on function public.game_info(text), public.join_pre_game(text, text, text, text, text, text)
   to anon, authenticated;
+
+-- =====================================================================
+-- 10) v8: ชุดหลักสูตร — สร้างหลายรุ่นในครั้งเดียว (เช่น เช้า/บ่าย หรือ รุ่น 1–8)
+--     แต่ละรุ่นเป็นรอบ Pre/Post แยกกัน (QR / สวิตช์ / เกม Pre-test ของตัวเอง)
+--     รายงานรวมหลายรอบดูได้ที่หน้าเว็บ (เลือกทั้งชุด หรือเลือกรอบเองก็ได้)
+-- =====================================================================
+alter table public.trainings add column if not exists series_id   uuid;
+alter table public.trainings add column if not exists series      text;
+alter table public.trainings add column if not exists round_label text;
+alter table public.trainings add column if not exists round_no    int;
+create index if not exists trainings_series_idx on public.trainings (series_id) where series_id is not null;
+
+-- p_labels: ["รุ่น 1","รุ่น 2",...] หรือ [""] = รอบเดียว
+-- p_settings: {"survey_id": uuid|null, "shuffle": bool, "retake": bool}
+create or replace function public.create_training_series(
+  p_quiz_id uuid, p_series text, p_labels jsonb, p_pass int default 80, p_settings jsonb default '{}'::jsonb
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_series text := left(trim(coalesce(p_series, '')), 150); v_sid uuid; v_n int; v_label text; v_i int := 0;
+        r jsonb; v_out jsonb := '[]'::jsonb; v_survey uuid; v_multi boolean;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if v_series = '' then raise exception 'กรุณาใส่ชื่อหลักสูตร'; end if;
+  if jsonb_typeof(p_labels) <> 'array' then raise exception 'รายชื่อรุ่นไม่ถูกต้อง'; end if;
+  v_n := jsonb_array_length(p_labels);
+  if v_n < 1 or v_n > 40 then raise exception 'สร้างได้ 1–40 รุ่นต่อครั้ง'; end if;
+  v_multi := v_n > 1;
+
+  v_survey := nullif(p_settings ->> 'survey_id', '')::uuid;
+  if v_survey is not null and not exists (select 1 from surveys where id = v_survey
+       and (owner_id = auth.uid() or shared or public.is_admin())) then
+    raise exception 'ไม่พบแบบประเมินที่เลือก';
+  end if;
+
+  v_sid := case when v_multi then gen_random_uuid() end;
+  for v_label in select left(trim(x), 100) from jsonb_array_elements_text(p_labels) as t(x) loop
+    v_i := v_i + 1;
+    if v_multi and v_label = '' then v_label := 'รุ่น ' || v_i; end if;
+    r := public.create_training(p_quiz_id,
+           case when v_label = '' then v_series else v_series || ' · ' || v_label end, p_pass);
+    update trainings
+       set series_id = v_sid, series = case when v_multi then v_series end,
+           round_label = nullif(v_label, ''), round_no = case when v_multi then v_i end,
+           survey_id = v_survey,
+           shuffle = coalesce((p_settings ->> 'shuffle')::boolean, true),
+           retake  = coalesce((p_settings ->> 'retake')::boolean, true)
+     where id = (r ->> 'id')::uuid;
+    v_out := v_out || jsonb_build_object('id', r ->> 'id', 'code', r ->> 'code', 'label', v_label);
+  end loop;
+  return jsonb_build_object('series_id', v_sid, 'rounds', v_out);
+end $$;
+
+revoke execute on function public.create_training_series(uuid, text, jsonb, int, jsonb) from public, anon;
+grant execute on function public.create_training_series(uuid, text, jsonb, int, jsonb) to authenticated;
