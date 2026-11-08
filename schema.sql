@@ -1713,3 +1713,169 @@ begin
   returning id into v_id;
   return jsonb_build_object('session_id', v_id, 'pin', v_pin);
 end $$;
+
+-- =====================================================================
+-- 13) v11: 👥 ผู้ร่วมแก้ไขชุดคำถาม
+--     - เจ้าของ/ผู้ดูแล ใส่อีเมลพนักงานเป็นผู้ร่วมแก้ไขได้ (ไม่ต้องแชร์ให้ทุกแผนก)
+--     - ผู้ร่วมแก้ไข: เห็นและแก้ชุดนั้น · เปิดเกม · สร้างรอบ Pre/Post
+--     - ลบชุด / เปลี่ยนแชร์-ส่วนตัว / แก้รายชื่อผู้ร่วมแก้ไข ทำได้เฉพาะเจ้าของหรือผู้ดูแล
+-- =====================================================================
+alter table public.quizzes add column if not exists editors text[] not null default '{}';
+
+drop policy if exists quizzes_read on public.quizzes;
+create policy quizzes_read on public.quizzes for select to authenticated
+  using (public.is_staff() and (owner_id = auth.uid() or shared or public.is_admin() or public.is_cohost(editors)));
+drop policy if exists quizzes_update on public.quizzes;
+create policy quizzes_update on public.quizzes for update to authenticated
+  using (owner_id = auth.uid() or public.is_admin() or public.is_cohost(editors))
+  with check (owner_id = auth.uid() or public.is_admin() or public.is_cohost(editors));
+drop policy if exists questions_write on public.questions;
+create policy questions_write on public.questions for all to authenticated
+  using (exists (select 1 from public.quizzes q where q.id = quiz_id
+                  and (q.owner_id = auth.uid() or public.is_admin() or public.is_cohost(q.editors))))
+  with check (exists (select 1 from public.quizzes q where q.id = quiz_id
+                  and (q.owner_id = auth.uid() or public.is_admin() or public.is_cohost(q.editors))));
+
+create or replace function public.quizzes_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return new; end if;
+  if (new.editors is distinct from old.editors or new.shared is distinct from old.shared
+      or new.owner_id is distinct from old.owner_id or new.owner_email is distinct from old.owner_email)
+     and not (old.owner_id = auth.uid() or public.is_admin()) then
+    raise exception 'เฉพาะเจ้าของชุดหรือผู้ดูแลระบบที่เปลี่ยนการแชร์/ผู้ร่วมแก้ไขได้';
+  end if;
+  return new;
+end $$;
+drop trigger if exists quizzes_guard on public.quizzes;
+create trigger quizzes_guard before update on public.quizzes
+  for each row execute function public.quizzes_guard();
+
+create or replace function public.set_quiz_editors(p_quiz uuid, p_emails jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare q quizzes; v text[]; v_dom text; v_bad text;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into q from quizzes where id = p_quiz;
+  if q.id is null or not (q.owner_id = auth.uid() or public.is_admin()) then
+    raise exception 'เฉพาะเจ้าของชุดหรือผู้ดูแลระบบ';
+  end if;
+  if jsonb_typeof(coalesce(p_emails, '[]'::jsonb)) <> 'array' then raise exception 'รายชื่อไม่ถูกต้อง'; end if;
+  select lower(allowed_domain) into v_dom from app_config where id = 1;
+  select coalesce(array_agg(distinct e), '{}') into v
+    from (select lower(trim(x)) e from jsonb_array_elements_text(coalesce(p_emails, '[]'::jsonb)) x) s
+   where e <> '' and e <> lower(coalesce(q.owner_email, ''));
+  select e into v_bad from unnest(v) e where e !~ ('^[^@\s]+@' || replace(v_dom, '.', '\.') || '$') limit 1;
+  if v_bad is not null then raise exception 'ใช้ได้เฉพาะอีเมล @% (%)', v_dom, v_bad; end if;
+  if cardinality(v) > 20 then raise exception 'ผู้ร่วมแก้ไขได้ไม่เกิน 20 คน'; end if;
+  update quizzes set editors = v where id = q.id;
+  return to_jsonb(v);
+end $$;
+revoke execute on function public.set_quiz_editors(uuid, jsonb) from public, anon;
+grant execute on function public.set_quiz_editors(uuid, jsonb) to authenticated;
+
+
+-- เปิดเกม / สร้างรอบ: ผู้ร่วมแก้ไขทำได้แม้ชุดเป็นแบบส่วนตัว
+create or replace function public.create_session(p_quiz_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_quiz quizzes; v_qs jsonb; v_n int; v_pin text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into v_quiz from quizzes where id = p_quiz_id;
+  if v_quiz.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  if not (v_quiz.owner_id = auth.uid() or v_quiz.shared or public.is_admin() or public.is_cohost(v_quiz.editors)) then
+    raise exception 'ชุดคำถามนี้เป็นแบบส่วนตัว';
+  end if;
+
+  select jsonb_agg(jsonb_build_object(
+           'text', text, 'image_url', image_url, 'choices', choices,
+           'correct', correct_index, 'time', time_limit,
+           'colors', colors, 'images', choice_images) order by position), count(*)
+    into v_qs, v_n
+    from questions where quiz_id = p_quiz_id and kind <> 'text';
+  if v_n = 0 then raise exception 'ชุดคำถามนี้ยังไม่มีข้อปรนัยสำหรับเล่นเกม'; end if;
+
+  loop
+    v_pin := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from sessions where pin = v_pin and status <> 'ended');
+    i := i + 1;
+    if i > 50 then raise exception 'สร้างรหัสห้องไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+
+  insert into sessions (quiz_id, host_id, title, pin, questions, total_questions, cover_url)
+  values (p_quiz_id, auth.uid(), v_quiz.title, v_pin, v_qs, v_n, v_quiz.cover_url)
+  returning id into v_id;
+  return jsonb_build_object('session_id', v_id, 'pin', v_pin);
+end $$;
+
+create or replace function public.create_training(p_quiz_id uuid, p_title text, p_pass int default 80)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_quiz quizzes; v_qs jsonb; v_n int; v_code text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into v_quiz from quizzes where id = p_quiz_id;
+  if v_quiz.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  if not (v_quiz.owner_id = auth.uid() or v_quiz.shared or public.is_admin() or public.is_cohost(v_quiz.editors)) then
+    raise exception 'ชุดคำถามนี้เป็นแบบส่วนตัว';
+  end if;
+  select jsonb_agg(case when kind = 'text'
+             then jsonb_build_object('kind', 'text', 'text', text, 'image_url', image_url, 'choices', '[]'::jsonb)
+             else jsonb_build_object('text', text, 'image_url', image_url, 'choices', choices, 'correct', correct_index,
+                    'time', time_limit, 'colors', colors, 'images', choice_images) end order by position),
+         count(*) filter (where kind <> 'text')
+    into v_qs, v_n from questions where quiz_id = p_quiz_id;
+  if coalesce(v_n, 0) = 0 then raise exception 'ชุดคำถามนี้ยังไม่มีข้อปรนัย'; end if;
+  loop
+    v_code := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from trainings where code = v_code);
+    i := i + 1; if i > 50 then raise exception 'สร้างรหัสไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+  insert into trainings (quiz_id, title, code, pass_percent, questions, total, cover_url)
+  values (p_quiz_id, left(coalesce(nullif(trim(p_title), ''), v_quiz.title), 200), v_code,
+          least(100, greatest(0, coalesce(p_pass, 80))), v_qs, v_n, v_quiz.cover_url)
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'code', v_code);
+end $$;
+
+-- บันทึกชุดคำถาม: ผู้ร่วมแก้ไขบันทึกได้ (การแชร์เปลี่ยนได้เฉพาะเจ้าของ — ดู quizzes_guard)
+create or replace function public.save_quiz(
+  p_id uuid, p_title text, p_department text, p_description text, p_questions jsonb,
+  p_cover text default null, p_shared boolean default false
+) returns uuid language plpgsql security invoker set search_path = public as $$
+declare v_id uuid;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not exists (select 1 from jsonb_array_elements(coalesce(p_questions, '[]'::jsonb)) q
+                  where coalesce(q ->> 'kind', 'choice') <> 'text') then
+    raise exception 'ต้องมีข้อปรนัย (มีตัวเลือก) อย่างน้อย 1 ข้อ';
+  end if;
+  if p_id is null then
+    insert into quizzes (title, department, description, cover_url, shared)
+    values (trim(p_title), trim(coalesce(p_department, '')), coalesce(p_description, ''), nullif(p_cover, ''),
+            coalesce(p_shared, false))
+    returning id into v_id;
+  else
+    update quizzes set title = trim(p_title), department = trim(coalesce(p_department, '')),
+                       description = coalesce(p_description, ''), cover_url = nullif(p_cover, ''),
+                       shared = coalesce(p_shared, false), updated_at = now()
+     where id = p_id and (owner_id = auth.uid() or public.is_admin() or public.is_cohost(editors))
+    returning id into v_id;
+    if v_id is null then raise exception 'ไม่มีสิทธิ์แก้ไขชุดคำถามนี้'; end if;
+    delete from questions where quiz_id = v_id;
+  end if;
+
+  insert into questions (quiz_id, position, kind, text, image_url, choices, correct_index, time_limit,
+                         colors, choice_images)
+  select v_id, (t.ord - 1)::int, k, trim(t.q ->> 'text'), nullif(t.q ->> 'image_url', ''),
+         case when k = 'text' then '[]'::jsonb else t.q -> 'choices' end,
+         case when k = 'text' then null else (t.q ->> 'correct_index')::int end,
+         coalesce((t.q ->> 'time_limit')::int, 20),
+         case when k = 'choice' and jsonb_typeof(t.q -> 'colors') = 'array'
+               and not exists (select 1 from jsonb_array_elements_text(t.q -> 'colors') c
+                                where c !~ '^#[0-9a-fA-F]{6}$')
+              then t.q -> 'colors' end,
+         case when k = 'choice' and jsonb_typeof(t.q -> 'choice_images') = 'array' then t.q -> 'choice_images' end
+    from jsonb_array_elements(coalesce(p_questions, '[]'::jsonb)) with ordinality as t(q, ord),
+         lateral (select case when t.q ->> 'kind' = 'text' then 'text' else 'choice' end as k) kk;
+  return v_id;
+end $$;
