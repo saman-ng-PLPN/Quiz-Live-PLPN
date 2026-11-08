@@ -295,6 +295,10 @@ table.rep tr.low td{background:#fff5f5}
 /* v3: แชร์ / ผู้ดูแล */
 .vis{display:inline-block;font-size:12px;padding:2px 9px;border-radius:99px;font-weight:600;background:#eef1f4;color:var(--muted)}
 .vis.shared{background:#e3f4ea;color:#1b6b42}
+.edpanel{border:2px solid #c9def5;background:#f4f9ff;border-radius:14px;padding:12px 14px;display:grid;gap:8px}
+.edpanel h3{margin:0;font-size:17px}
+.mdl{position:fixed;inset:0;background:rgba(10,20,40,.45);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px}
+.mdl .box{background:#fff;border-radius:16px;max-width:540px;width:100%;padding:18px;display:grid;gap:10px;max-height:90vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.25)}
 .switch{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:500}
 .switch input{appearance:none;-webkit-appearance:none;width:46px;height:26px;border-radius:99px;background:#cfd6dc;position:relative;
   transition:background .2s;flex:none;cursor:pointer;margin:0}
@@ -801,6 +805,51 @@ const Player = {
 // =====================================================================
 // ผู้จัด: รายการชุดคำถาม + ตัวแก้ไข
 // =====================================================================
+// ✏ ผู้ร่วมแก้ไขชุดคำถาม — ใช้ทั้งในหน้าแก้ไขและหน้าต่างจากการ์ด
+function mountEditors(root, q, canOwn, onChange) {
+  const draw = () => {
+    const list = q.editors || [];
+    root.innerHTML = `<h3>✏ ผู้ร่วมแก้ไข <span class="hint" style="font-weight:400">(${list.length ? list.length + ' คน' : 'ยังไม่มี'})</span></h3>
+      <p class="hint" style="margin:0">ผู้ร่วมแก้ไขเห็นชุดนี้ในแท็บ “ของฉัน” · แก้ไขคำถาม เปิดเกม และสร้างรอบ Pre/Post ได้ แม้ชุดเป็นแบบส่วนตัว (คนอื่นไม่เห็นเฉลย)
+        <br>ลบชุด เปลี่ยนการแชร์ และแก้รายชื่อผู้ร่วมแก้ไขไม่ได้</p>
+      <div style="display:grid;gap:6px">${list.map(e => `<div class="it" style="border-color:var(--line);background:#fff"><span class="grow">${esc(e)}</span>
+        ${canOwn ? `<button class="btn danger sm" type="button" data-edrm="${esc(e)}">นำออก</button>` : ''}</div>`).join('')}</div>
+      ${canOwn ? (q.id ? `<div class="row" style="gap:8px"><input class="inp grow" data-edin placeholder="อีเมล หรือชื่อหน้า @ (เช่น somchai.j)" style="min-width:0">
+          <button class="btn sm" type="button" data-edadd>+ เพิ่มผู้ร่วมแก้ไข</button></div>` : '<p class="hint" style="margin:0">บันทึกชุดคำถามก่อน จึงเพิ่มผู้ร่วมแก้ไขได้</p>')
+        : `<p class="hint" style="margin:0">เจ้าของชุด: ${esc(q.owner_email || '')}</p>`}`;
+    $$('[data-edrm]', root).forEach(b => b.onclick = () => { if (confirm(`นำ ${b.dataset.edrm} ออกจากผู้ร่วมแก้ไข?`)) put(list.filter(x => x !== b.dataset.edrm)); });
+    const inp = $('[data-edin]', root), add = $('[data-edadd]', root);
+    if (!add) return;
+    const go = async () => {
+      let e = inp.value.trim().toLowerCase(); if (!e) return inp.focus();
+      if (!e.includes('@')) e += '@' + (CFG.ALLOWED_DOMAIN || '').toLowerCase();
+      if (e === (q.owner_email || '').toLowerCase()) return toast('อีเมลนี้เป็นเจ้าของชุดอยู่แล้ว', true);
+      if (list.includes(e)) return toast('มีในรายชื่อแล้ว', true);
+      if (await put([...list, e])) $('[data-edin]', root).focus();
+    };
+    add.onclick = go;
+    inp.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } };
+  };
+  const put = async emails => {
+    try { q.editors = await rpc('set_quiz_editors', { p_quiz: q.id, p_emails: emails }); draw(); toast('บันทึกผู้ร่วมแก้ไขแล้ว'); if (onChange) onChange(); return true; }
+    catch (e) { toast(errMsg(e), true); return false; }
+  };
+  draw();
+}
+function editorsDialog(q, canOwn, onChange) {
+  const el = document.createElement('div'); el.className = 'mdl';
+  el.innerHTML = `<div class="box"><div class="row"><b class="grow">${esc(q.title)}</b><button class="btn light sm" data-x>ปิด ✕</button></div>
+    <div class="edpanel" data-ed></div></div>`;
+  const close = () => { el.remove(); document.removeEventListener('keydown', key); if (onChange) onChange(); };
+  const key = e => { if (e.key === 'Escape') close(); };
+  el.onclick = e => { if (e.target === el || e.target.closest('[data-x]')) close(); };
+  document.addEventListener('keydown', key);
+  document.body.appendChild(el);
+  mountEditors($('[data-ed]', el), q, canOwn);
+  const i = $('[data-edin]', el); if (i) i.focus();
+  onLeave(() => el.remove());
+}
+
 const Admin = {
   tab: 'mine', q: '',
   async list() {
@@ -924,7 +973,7 @@ const Admin = {
                       : `<div class="cover">${esc([...q.title][0] || '?')}</div>`}
         <div class="row" style="gap:6px">${q.department ? `<span class="dept">${esc(q.department)}</span>` : ''}
           <span class="vis ${q.shared ? 'shared' : ''}">${q.shared ? '👥 แชร์ทุกแผนก' : '🔒 ส่วนตัว'}</span>
-          ${ed ? '<span class="vis shared">✏ ร่วมแก้ไข</span>' : mine && (q.editors || []).length ? `<span class="vis">✏ ผู้ร่วมแก้ไข ${q.editors.length}</span>` : ''}</div>
+          ${ed ? '<span class="vis shared">✏ ร่วมแก้ไข</span>' : ''}</div>
         <h3>${esc(q.title)}</h3>
         <div class="meta">${n} ข้อ · แก้ไข ${new Date(q.updated_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
           ${mine ? '' : `<br>โดย ${esc(q.owner_email)}`}</div>
@@ -932,7 +981,8 @@ const Admin = {
           <button class="btn sm sun" data-play="${q.id}" ${n ? '' : 'disabled'}>▶ เริ่มเกม</button>
           <button class="btn sm light" data-test="${q.id}" ${n ? '' : 'disabled'} title="สร้างรอบแบบทดสอบก่อน-หลังอบรม">📝 Pre/Post</button>
           ${canEdit ? `<a class="btn sm light" href="#edit/${q.id}">แก้ไข</a>` : ''}
-          ${canOwn ? `<button class="btn sm light" data-share="${q.id}">${q.shared ? 'เลิกแชร์' : 'แชร์'}</button>
+          ${canOwn ? `<button class="btn sm light" data-eds="${q.id}" title="ให้เพื่อนร่วมงานช่วยแก้ไขชุดนี้">✏ ผู้ร่วมแก้ไข${(q.editors || []).length ? ` (${q.editors.length})` : ''}</button>
+                       <button class="btn sm light" data-share="${q.id}">${q.shared ? 'เลิกแชร์' : 'แชร์'}</button>
                        <button class="btn sm danger" data-del="${q.id}">ลบ</button>` : ''}
           ${mine || ed ? '' : `<button class="btn sm light" data-dup="${q.id}">คัดลอกมาแก้</button>`}
         </div></article>`; }).join('')}</div>`;
@@ -945,6 +995,7 @@ const Admin = {
       this.quizzes = this.quizzes.filter(x => x.id !== q.id); this.renderCards(); toast('ลบแล้ว');
     });
     $$('[data-test]', box).forEach(b => b.onclick = () => { location.hash = '#newtraining/' + b.dataset.test; });
+    $$('[data-eds]', box).forEach(b => b.onclick = () => editorsDialog(this.quizzes.find(x => x.id === b.dataset.eds), true, () => this.renderCards()));
     $$('[data-share]', box).forEach(b => b.onclick = async () => {
       const q = this.quizzes.find(x => x.id === b.dataset.share), to = !q.shared;
       if (to && !confirm(`แชร์ “${q.title}” ให้ทุกแผนกเห็น? (จะเห็นคำตอบด้วย)`)) return;
@@ -1051,13 +1102,7 @@ const Admin = {
         <div class="fld full"><label class="switch"><input type="checkbox" id="f-shared" ${quiz.shared ? 'checked' : ''} ${this.canOwn ? '' : 'disabled'}>
           แชร์ให้ทุกแผนกเห็นและนำไปเล่นได้</label>
           <p class="hint" id="sharehint"></p></div>
-        <details class="fld full" id="edbox"><summary style="cursor:pointer;font-weight:600" id="edsum"></summary>
-          <p class="hint" style="margin:4px 0">ผู้ร่วมแก้ไขเห็นชุดนี้ในแท็บ “ของฉัน” · แก้ไขคำถาม เปิดเกม และสร้างรอบ Pre/Post ได้ แม้ชุดเป็นแบบส่วนตัว
-            <br>ลบชุด เปลี่ยนการแชร์ และแก้รายชื่อผู้ร่วมแก้ไขไม่ได้</p>
-          <div id="edlist" style="display:grid;gap:6px"></div>
-          ${this.canOwn ? (quiz.id ? `<div class="row" style="gap:8px;margin-top:6px"><input class="inp grow" id="edemail" placeholder="อีเมล หรือชื่อหน้า @ (เช่น somchai.j)" style="min-width:0">
-            <button class="btn sm" type="button" id="edadd">+ เพิ่มผู้ร่วมแก้ไข</button></div>` : '<p class="hint">บันทึกชุดคำถามก่อน จึงเพิ่มผู้ร่วมแก้ไขได้</p>') : ''}
-        </details>
+        <div class="fld full edpanel" id="edbox"></div>
       </div>
       <div id="qlist"></div>
       <button class="btn light" id="addq" style="margin-top:14px;width:100%">+ เพิ่มคำถาม</button>`) + `
@@ -1083,31 +1128,7 @@ const Admin = {
     ql.addEventListener('click', e => this.onClick(e));
     this.renderCover(); this.renderQs(); this.status();
   },
-  bindEditors() {
-    const q = this.quiz;
-    const draw = () => {
-      const list = q.editors || [];
-      $('#edsum').innerHTML = `✏ ผู้ร่วมแก้ไข <span class="hint">(${list.length ? list.length + ' คน' : 'ยังไม่มี'})</span>`;
-      $('#edlist').innerHTML = list.map(e => `<div class="it" style="border-color:var(--line)"><span class="grow">${esc(e)}</span>
-        ${this.canOwn ? `<button class="btn danger sm" type="button" data-edrm="${esc(e)}">นำออก</button>` : ''}</div>`).join('');
-      $$('[data-edrm]').forEach(b => b.onclick = () => { if (confirm(`นำ ${b.dataset.edrm} ออกจากผู้ร่วมแก้ไข?`)) put(list.filter(x => x !== b.dataset.edrm)); });
-    };
-    const put = async emails => {
-      try { q.editors = await rpc('set_quiz_editors', { p_quiz: q.id, p_emails: emails }); draw(); toast('บันทึกผู้ร่วมแก้ไขแล้ว'); return true; }
-      catch (e) { toast(errMsg(e), true); return false; }
-    };
-    draw();
-    const add = $('#edadd'); if (!add) return;
-    const go = async () => {
-      let e = $('#edemail').value.trim().toLowerCase(); if (!e) return;
-      if (!e.includes('@')) e += '@' + (CFG.ALLOWED_DOMAIN || '').toLowerCase();
-      if (e === (q.owner_email || this.user.email || '').toLowerCase()) return toast('อีเมลนี้เป็นเจ้าของชุดอยู่แล้ว', true);
-      if ((q.editors || []).includes(e)) return toast('มีในรายชื่อแล้ว', true);
-      if (await put([...(q.editors || []), e])) $('#edemail').value = '';
-    };
-    add.onclick = go;
-    $('#edemail').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); go(); } };
-  },
+  bindEditors() { mountEditors($('#edbox'), this.quiz, this.canOwn); },
   renderCover() {
     const box = $('#coverfld'), url = this.quiz.cover_url;
     box.innerHTML = url
@@ -1245,7 +1266,9 @@ const Admin = {
       const id = await rpc('save_quiz', { p_id: this.quiz.id, p_title: d.title, p_department: d.dept,
                                          p_description: d.desc, p_questions: d.qs, p_cover: this.quiz.cover_url || '',
                                          p_shared: $('#f-shared').checked });
+      const wasNew = !this.quiz.id;
       this.quiz.id = id; this.dirty = false; this.status();
+      if (wasNew) { this.quiz.owner_email = this.quiz.owner_email || this.user.email; this.quiz.editors = []; this.bindEditors(); }
       history.replaceState(null, '', '#edit/' + id);
       if (andPlay) return this.play(id);
       toast('บันทึกแล้ว');
