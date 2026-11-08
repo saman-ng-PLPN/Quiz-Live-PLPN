@@ -1044,10 +1044,47 @@ const Admin = {
       catch (e) { toast(errMsg(e), true); }
     };
   },
-  async play(quizId, btn) {
+  async play(quizId, btn, force) {
     if (btn) btn.disabled = true;
+    // ชุดคำถามที่ใช้เป็นข้อสอบ Pre/Post: เตือนก่อน เพราะเกมปกติจะเฉลยทุกข้อและไม่บันทึกผล
+    if (!force) {
+      const { data: rounds } = await sb.from('trainings').select('id,title,round_no,created_at')
+        .eq('quiz_id', quizId).order('created_at', { ascending: false }).limit(40);
+      if (rounds && rounds.length) { if (btn) btn.disabled = false; return this.examWarn(quizId, rounds, btn); }
+    }
     try { const r = await rpc('create_session', { p_quiz_id: quizId }); location.hash = '#host/' + r.session_id; }
     catch (e) { toast(errMsg(e), true); if (btn) btn.disabled = false; }
+  },
+  examWarn(quizId, rounds, btn) {
+    const el = document.createElement('div'); el.className = 'mdl';
+    const list = [...rounds].sort((a, b) => (a.round_no ?? 999) - (b.round_no ?? 999) || a.created_at.localeCompare(b.created_at));
+    el.innerHTML = `<div class="box" style="color:var(--ink)">
+      <h3 style="margin:0">⚠️ ชุดนี้ใช้เป็นข้อสอบ Pre/Post (${rounds.length} รอบ)</h3>
+      <p style="margin:0">ถ้าเริ่มเป็น<b>เกมปกติ</b> ระบบจะ<b>เฉลยทุกข้อ</b>บนจอ และ<b>ไม่บันทึกผลเป็น Pre-test</b>
+        ผู้เข้าอบรมจะเห็นคำตอบก่อนทำ Post-test</p>
+      <b>ต้องการเกม Pre-test? เลือกรุ่น (ไม่เฉลย · บันทึกผล)</b>
+      <div style="display:grid;gap:6px;max-height:42vh;overflow:auto">${list.map(t =>
+        `<button class="btn sun" data-pg="${t.id}" style="justify-content:flex-start;text-align:left">🎮 ${esc(t.title)}</button>`).join('')}</div>
+      <div class="row" style="justify-content:space-between;margin-top:6px">
+        <button class="btn light sm" data-x>ยกเลิก</button>
+        <button class="btn danger sm" data-normal>เล่นเป็นเกมปกติ (เฉลยทุกข้อ)</button></div></div>`;
+    const close = () => el.remove();
+    el.onclick = async e => {
+      if (e.target === el || e.target.closest('[data-x]')) return close();
+      const pg = e.target.closest('[data-pg]');
+      if (pg) {
+        $$('button', el).forEach(b => b.disabled = true);
+        try { const r = await rpc('create_pre_game', { p_training: pg.dataset.pg }); close(); location.hash = '#host/' + r.session_id; }
+        catch (err) { toast(errMsg(err), true); $$('button', el).forEach(b => b.disabled = false); }
+        return;
+      }
+      if (e.target.closest('[data-normal]')) {
+        if (!confirm('ยืนยันเล่นเป็นเกมปกติ?\nจะเฉลยคำตอบทุกข้อ และไม่บันทึกผลเป็น Pre-test')) return;
+        close(); this.play(quizId, btn, true);
+      }
+    };
+    document.body.appendChild(el);
+    onLeave(close);
   },
 
   // ---------- ตัวแก้ไข ----------
