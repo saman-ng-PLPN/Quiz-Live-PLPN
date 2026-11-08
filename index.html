@@ -193,6 +193,13 @@ body.test{background:#eef2f6;color:var(--ink)}
 .tq .qimg{max-width:100%;max-height:240px;border-radius:10px;justify-self:center;object-fit:contain}
 .tq .opts2{display:grid;gap:8px}
 .tq .opts2.imgs{grid-template-columns:1fr 1fr}
+.tq textarea.ans{width:100%;min-height:96px;border:2px solid var(--line);border-radius:12px;padding:10px;font:inherit;font-size:16px;resize:vertical}
+.tq textarea.ans:focus{outline:none;border-color:var(--ink)}
+.tq .wtag,.kindsw .wtag{display:inline-block;background:#eef3ff;color:#2a4fa0;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600}
+.kindsw{display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;user-select:none}
+.qcard.textq .pal,.qcard.textq .opts,.qcard.textq .choicehint,.qcard.textq select[data-f=time_limit]{display:none}
+.wans{display:grid;gap:6px}.wans .wa{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 10px;white-space:pre-wrap}
+.wans .wa small{display:block;color:var(--muted);font-size:12px;margin-bottom:2px}
 .tch{display:flex;align-items:center;gap:10px;border:2px solid var(--line);border-radius:12px;padding:8px;background:#fff;text-align:left;font-size:16px;width:100%}
 .tch b{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex:none;font-size:17px}
 .tch .cbody{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
@@ -441,6 +448,7 @@ body.stage{background:radial-gradient(1200px 700px at 85% -10%, #21506f 0%, tran
 const CFG = window.QUIZ_CONFIG || {};
 const APP = CFG.APP_NAME || 'Quiz Live';
 const LETTERS = ['ก', 'ข', 'ค', 'ง'];
+const isText = q => !!q && q.kind === 'text';   // ข้อเขียน (ไม่คิดคะแนน)
 const TIMES = [10, 15, 20, 30, 45, 60, 90, 120];
 const DEF_COLORS = ['#e44d57', '#2c7bd6', '#ec9a26', '#2a9d63'];
 const PALETTES = [
@@ -992,7 +1000,7 @@ const Admin = {
   // ---------- ตัวแก้ไข ----------
   blankQ() {
     const last = this.qs && this.qs[this.qs.length - 1];   // ข้อใหม่ใช้ชุดสีเดียวกับข้อก่อนหน้า
-    return { text: '', image_url: '', choices: ['', '', '', ''], images: ['', '', '', ''],
+    return { kind: 'choice', text: '', image_url: '', choices: ['', '', '', ''], images: ['', '', '', ''],
              colors: last ? [...last.colors] : [...DEF_COLORS], correct_index: 0, time_limit: last ? last.time_limit : 20 };
   },
   async edit(id) {
@@ -1011,8 +1019,8 @@ const Admin = {
       if (a.error || !a.data) { toast('ไม่พบชุดคำถาม', true); location.hash = '#admin'; return; }
       if (a.data.owner_id !== user.id && !this.isAdmin) { toast('แก้ไขได้เฉพาะชุดคำถามของตัวเอง กด “คัดลอกมาแก้” แทน', true); location.hash = '#admin'; return; }
       quiz = a.data;
-      qs = (b.data || []).map(q => ({ text: q.text, image_url: q.image_url || '', time_limit: q.time_limit,
-        correct_index: q.correct_index, choices: [0, 1, 2, 3].map(i => q.choices[i] || ''),
+      qs = (b.data || []).map(q => ({ kind: q.kind === 'text' ? 'text' : 'choice', text: q.text, image_url: q.image_url || '', time_limit: q.time_limit,
+        correct_index: q.correct_index ?? 0, choices: [0, 1, 2, 3].map(i => q.choices[i] || ''),
         colors: [0, 1, 2, 3].map(i => colorAt(q.colors, i)), images: [0, 1, 2, 3].map(i => imgAt(q.choice_images, i)) }));
     }
     this.qs = null;
@@ -1079,12 +1087,14 @@ const Admin = {
     const rm = $('#rmcover'); if (rm) rm.onclick = () => { this.quiz.cover_url = ''; this.touch(); this.renderCover(); };
   },
   touch() { this.dirty = true; this.status(); },
-  status() { const s = $('#st'); if (s) s.textContent = `${this.qs.length} ข้อ` + (this.dirty ? ' · ยังไม่ได้บันทึก' : ''); },
+  status() { const s = $('#st'), w = this.qs.filter(isText).length;
+    if (s) s.textContent = `${this.qs.length} ข้อ` + (w ? ` (ข้อเขียน ${w})` : '') + (this.dirty ? ' · ยังไม่ได้บันทึก' : ''); },
   renderQs() {
     const n = this.qs.length;
     $('#qlist').innerHTML = this.qs.map((q, qi) => `
-      <section class="qcard" data-qi="${qi}">
+      <section class="qcard ${isText(q) ? 'textq' : ''}" data-qi="${qi}">
         <div class="qhead"><span class="qnum">ข้อ ${qi + 1}</span>
+          <label class="kindsw" title="ผู้ตอบพิมพ์คำตอบเอง เก็บไว้ในรายงาน ไม่นำมาคิดคะแนน"><input type="checkbox" data-f="kind" ${isText(q) ? 'checked' : ''}> ข้อเขียน <span class="wtag">ไม่คิดคะแนน</span></label>
           <select data-f="time_limit" aria-label="เวลา">${TIMES.map(t => `<option value="${t}" ${t === +q.time_limit ? 'selected' : ''}>${t} วินาที</option>`).join('')}</select>
           <span class="grow"></span>
           <button class="icon-btn" data-act="up" title="เลื่อนขึ้น" ${qi === 0 ? 'disabled' : ''}>↑</button>
@@ -1109,7 +1119,8 @@ const Admin = {
             ${q.images[i] ? '' : `<label class="obtn" title="ใช้รูปเป็นคำตอบ">🖼<input type="file" accept="image/*" data-act="cimg" data-ci="${i}" hidden></label>`}
             <label class="obtn swatch" title="เปลี่ยนสี" style="background:${colorAt(q.colors, i)}"><input type="color" data-f="color" data-ci="${i}" value="${colorAt(q.colors, i)}"></label>
           </div>`).join('')}</div>
-        <p class="hint">แตะตัวอักษรสีเพื่อเลือกคำตอบที่ถูก · 🖼 ใช้รูปเป็นคำตอบ · วงกลมสีขวาสุดใช้เปลี่ยนสี</p>
+        <p class="hint choicehint">แตะตัวอักษรสีเพื่อเลือกคำตอบที่ถูก · 🖼 ใช้รูปเป็นคำตอบ · วงกลมสีขวาสุดใช้เปลี่ยนสี</p>
+        ${isText(q) ? '<p class="hint">✍ ข้อเขียน: ผู้ทำแบบทดสอบ Pre/Post พิมพ์คำตอบเอง · ดูคำตอบได้ในรายงานแท็บรายข้อและไฟล์ Excel · ไม่นับคะแนน · ไม่แสดงในเกม</p>' : ''}
       </section>`).join('');
   },
   onInput(e) {
@@ -1131,6 +1142,7 @@ const Admin = {
       $('.mark b', opt).style.cssText = chipStyle(q.colors, i);
       el.parentElement.style.background = c;
     }
+    else if (f === 'kind') { q.kind = el.checked ? 'text' : 'choice'; this.touch(); this.renderQs(); return; }
     else if (f === 'text') q.text = el.value;
     else if (f === 'time_limit') q.time_limit = +el.value;
     else if (f === 'choice') q.choices[+el.dataset.ci] = el.value;
@@ -1170,6 +1182,10 @@ const Admin = {
     const title = $('#f-title').value.trim();
     if (!title) throw new Error('กรุณาใส่ชื่อเกม');
     const out = this.qs.map((q, n) => {
+      if (isText(q)) {
+        if (!q.text.trim()) throw new Error(`ข้อ ${n + 1}: ยังไม่ได้พิมพ์คำถาม`);
+        return { kind: 'text', text: q.text.trim(), image_url: q.image_url || '', choices: [], time_limit: +q.time_limit || 20 };
+      }
       const pairs = q.choices.map((t, i) => ({ t: t.trim(), img: q.images[i] || '', c: colorAt(q.colors, i), i }))
                              .filter(p => p.t || p.img);
       if (!q.text.trim()) throw new Error(`ข้อ ${n + 1}: ยังไม่ได้พิมพ์คำถาม`);
@@ -1181,6 +1197,7 @@ const Admin = {
       if (pairs.some(p => p.img)) item.choice_images = pairs.map(p => p.img);
       return item;
     });
+    if (!out.some(q => !isText(q))) throw new Error('ต้องมีข้อปรนัย (มีตัวเลือก) อย่างน้อย 1 ข้อ');
     return { title, dept: $('#f-dept').value.trim(), desc: $('#f-desc').value.trim(), qs: out };
   },
   async saveQuiz(andPlay) {
@@ -1549,7 +1566,7 @@ const Test = {
       <h1>${esc(i.title)}</h1>
       <div class="row" style="gap:6px"><span class="phase ${i.pre_open ? 'open' : ''}">${i.pre_open ? '●' : '○'} Pre-test ${i.pre_open ? 'เปิดรับ' : 'ปิด'}</span>
         <span class="phase ${i.post_open ? 'open' : ''}">${i.post_open ? '●' : '○'} Post-test ${i.post_open ? 'เปิดรับ' : 'ปิด'}</span>
-        <span class="phase">${i.total} ข้อ</span></div></header>`;
+        <span class="phase">${i.count || i.total} ข้อ</span></div></header>`;
   },
   intro() {
     const i = this.info, me = load('quizlive.tester') || {};
@@ -1596,7 +1613,8 @@ const Test = {
     const st = this.st = await rpc('test_status', { p_code: this.code, p_emp_id: this.who.emp_id });
     const qs = this.info.questions || [], seed = `${this.code}|${this.who.emp_id}|${this.phase}`;
     this.order = this.info.shuffle ? shuffledIdx(qs.length, seededRand(seed)) : qs.map((_, i) => i);
-    this.corder = qs.map((q, i) => this.info.shuffle ? shuffledIdx(q.choices.length, seededRand(seed + '|' + i)) : q.choices.map((_, k) => k));
+    this.corder = qs.map((q, i) => { const n = (q.choices || []).length;
+      return this.info.shuffle ? shuffledIdx(n, seededRand(seed + '|' + i)) : Array.from({ length: n }, (_, k) => k); });
     if (this.phase === 'pre') return st.pre_done ? this.preDone() : this.questions();
     if (st.post_passed) return st.has_survey && !st.survey_done ? this.survey() : this.finished();
     if (st.post_attempts > 0) return this.info.retake ? this.questions(st.last_answers, st.wrong, st) : this.finished();
@@ -1617,6 +1635,9 @@ const Test = {
       ${retry ? `<div class="notice">สอบครั้งที่ ${st.post_attempts + 1} · ครั้งก่อนได้ <b>${st.score}/${st.total}</b> (เกณฑ์ผ่าน ${this.info.pass_percent}%)<br>
         ข้อที่ยังไม่ถูกมี<b class="down">กรอบสีแดง</b> ระบบจำคำตอบเดิมไว้ให้ แก้เฉพาะข้อที่ผิดได้เลย</div>` : ''}
       ${this.order.map((qi, k) => { const q = qs[qi];
+        if (isText(q)) return `<section class="tq" id="tq${qi}"><div class="qn">ข้อ ${k + 1} / ${qs.length} · <span class="wtag">ข้อเขียน ไม่คิดคะแนน</span></div>
+          <h3>${esc(q.text)}</h3>${q.image_url ? `<img class="qimg" src="${esc(q.image_url)}" alt="">` : ''}
+          <textarea class="ans" data-w="${qi}" maxlength="2000" placeholder="พิมพ์คำตอบ…">${esc(typeof this.ans[qi] === 'string' ? this.ans[qi] : '')}</textarea></section>`;
         return `<section class="tq ${this.wrong.has(qi) ? 'wrongq' : ''}" id="tq${qi}"><div class="qn">ข้อ ${k + 1} / ${qs.length}${this.wrong.has(qi) ? ' · <span class="down">ครั้งก่อนข้อนี้ยังไม่ถูก</span>' : ''}</div>
         <h3>${esc(q.text)}</h3>${q.image_url ? `<img class="qimg" src="${esc(q.image_url)}" alt="">` : ''}
         <div class="opts2 ${hasImgs(q.images) ? 'imgs' : ''}">${this.corder[qi].map((ci, pos) =>
@@ -1627,17 +1648,20 @@ const Test = {
       const b = e.target.closest('.tch[data-q]'); if (!b) return;
       this.ans[+b.dataset.q] = +b.dataset.i; save(this.draftKey(), this.ans); this.mark();
     };
+    app.oninput = e => { const w = e.target.closest('textarea[data-w]'); if (!w) return;
+      this.ans[+w.dataset.w] = w.value; save(this.draftKey(), this.ans); this.mark(); };
     $('#send').onclick = () => this.send();
-    onLeave(() => { app.onclick = null; });
+    onLeave(() => { app.onclick = null; app.oninput = null; });
     this.mark();
   },
   mark() {
     $$('.tch[data-q]').forEach(b => b.classList.toggle('on', this.ans[+b.dataset.q] === +b.dataset.i));
-    const done = this.ans.filter(a => a !== null).length, n = this.ans.length;
+    const done = this.ans.filter(a => this.answered(a)).length, n = this.ans.length;
     $('#prog').innerHTML = `ตอบแล้ว <b>${done}</b> / ${n}<i><span style="width:${100 * done / n}%"></span></i>`;
   },
+  answered(a) { return typeof a === 'string' ? a.trim() !== '' : a !== null && a !== undefined; },
   async send() {
-    const miss = this.order.find(qi => this.ans[qi] === null);
+    const miss = this.order.find(qi => !this.answered(this.ans[qi]));
     if (miss !== undefined) { toast(`ยังไม่ได้ตอบข้อ ${this.dispNo(miss)}`, true); $('#tq' + miss).scrollIntoView({ behavior: 'smooth' }); return; }
     if (!confirm(`ส่งคำตอบ ${PHASE_TH[this.phase]}?`)) return;
     const b = $('#send'); b.disabled = true; b.textContent = 'กำลังส่ง…';
@@ -1811,6 +1835,19 @@ function sameQuestions(trs) {
   const sig = t => JSON.stringify((t.questions || []).map(q => [q.text, q.choices, q.correct]));
   return trs.length > 0 && trs.every(t => sig(t) === sig(trs[0]));
 }
+// ข้อเขียน (ไม่คิดคะแนน) — แสดงคำตอบทั้งหมดใต้ตารางรายข้อ
+function writesHTML(writes, showRound) {
+  if (!writes || !writes.length) return '';
+  return writes.map(w => `<h3 style="margin:18px 0 6px">✍ ข้อ ${w.n} (ข้อเขียน · ไม่คิดคะแนน)</h3><p style="margin:0 0 8px">${esc(w.text)}</p>
+    <div class="wans">${w.ans.length ? w.ans.map(a => `<div class="wa"><small>${a.ph} · ${esc(a.r.name)} · ${esc(a.r.dept || '')}${showRound ? ' · ' + esc(roundName(a.r.t)) : ''}</small>${esc(a.text)}</div>`).join('')
+      : '<p class="hint">ยังไม่มีคำตอบ</p>'}</div>`).join('');
+}
+function writesSheet(writes, add, showRound) {
+  if (!writes || !writes.length) return;
+  add('ข้อเขียน', [[...(showRound ? ['รอบ'] : []), 'ข้อ', 'คำถาม', 'ครั้ง', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'คำตอบ']]
+    .concat(writes.flatMap(w => w.ans.map(a => [...(showRound ? [roundName(a.r.t)] : []), w.n, w.text, a.ph, a.r.emp_id, a.r.name, a.r.hosp || '', a.r.dept || '', a.text]))));
+}
+const ansCell = (q, a) => isText(q) ? (typeof a === 'string' ? a : '') : a == null ? '(ไม่ทันตอบ)' : (q.choices[a] || '(รูป)') + (a === q.correct ? ' ✓' : '');
 function prepostCalc(trs, subs, done) {
   const tmap = new Map(trs.map(t => [t.id, t])), pct = s => s ? Math.round(100 * s.score / s.total) : null;
   const people = new Map();
@@ -1845,15 +1882,22 @@ function prepostCalc(trs, subs, done) {
   // รายข้อ: รวมได้เมื่อทุกรอบใช้คำถามชุดเดียวกัน
   const same = sameQuestions(trs), first = sub => sub.attempt === 1 && tmap.has(sub.training_id);
   const firstPost = subs.filter(x => x.phase === 'post' && first(x)), firstPre = subs.filter(x => x.phase === 'pre' && first(x));
-  const items = !same ? null : trs[0].questions.map((q, i) => {
+  const items = !same ? null : trs[0].questions.map((q, i) => isText(q) ? null : (() => {
     const f = ss => { if (!ss.length) return { pct: null, wrong: -1, wrongN: 0, n: 0, cnt: q.choices.map(() => 0) };
       const cnt = q.choices.map(() => 0); ss.forEach(x => { const a = x.answers[i]; if (cnt[a] !== undefined) cnt[a]++; });
       let wrong = -1; cnt.forEach((c, k) => { if (k !== q.correct && c > 0 && (wrong < 0 || c > cnt[wrong])) wrong = k; });
       return { pct: Math.round(100 * cnt[q.correct] / ss.length), wrong, wrongN: wrong >= 0 ? cnt[wrong] : 0, n: ss.length, cnt }; };
     return { n: i + 1, q, text: q.text, correct: q.correct, choices: q.choices, pre: f(firstPre), post: f(firstPost) };
-  });
+  })()).filter(Boolean);
+  // ข้อเขียน: คำตอบ Pre ครั้งแรก และ Post ครั้งล่าสุดของแต่ละคน
+  const writes = !same ? null : trs[0].questions.map((q, i) => {
+    if (!isText(q)) return null;
+    const ans = rows.flatMap(r => [['Pre', r.pre], ['Post', r.postL]].filter(([, x]) => x && typeof x.answers[i] === 'string' && x.answers[i].trim())
+      .map(([ph, x]) => ({ ph, r, text: x.answers[i] })));
+    return { n: i + 1, text: q.text, ans };
+  }).filter(Boolean);
   const rounds = trs.map(t => ({ t, ...sumUp(rows.filter(r => r.t.id === t.id)) }));
-  return { rows, items, avg, rounds, depts: group(r => (r.hosp || '') + '|' + r.dept), hosps: group(r => r.hosp || ''), ...sumUp(rows) };
+  return { rows, items, writes, avg, rounds, depts: group(r => (r.hosp || '') + '|' + r.dept), hosps: group(r => r.hosp || ''), ...sumUp(rows) };
 }
 
 // =====================================================================
@@ -2054,7 +2098,7 @@ const Training = {
         ${c.items.map(it => `<tr class="${it.post.pct != null && it.post.pct < 60 ? 'low' : ''}"><td>${it.n}</td>
           <td style="white-space:normal;min-width:220px">${esc(it.text)}</td><td class="num">${dash(it.pre.pct)}</td><td class="num">${dash(it.post.pct)}</td>
           <td style="white-space:normal">${it.post.wrong >= 0 ? `${esc(it.choices[it.post.wrong] || '(รูป)')} (${it.post.wrongN} คน)` : '–'}</td></tr>`).join('')}
-        </table></div>`;
+        </table></div>` + writesHTML(c.writes, false);
     } else {
       box.innerHTML = `<p class="hint">🔒 ไม่ระบุตัวตน · ผลรวมของรอบนี้เท่านั้น</p>` + surveyReportHTML(this.svItems || [], this.resp);
     }
@@ -2109,7 +2153,8 @@ const Training = {
         it.post.wrong >= 0 ? (it.choices[it.post.wrong] || '(รูป)') : '', it.post.wrongN || ''])));
     add('คำตอบดิบ', [['ครั้ง', 'สอบครั้งที่', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'คะแนน', ...t.questions.map((q, i) => `ข้อ ${i + 1}`)]]
       .concat(this.subs.map(s => [s.phase === 'pre' ? (s.source === 'game' ? 'Pre (เกม)' : 'Pre') : 'Post', s.attempt, s.emp_id, s.full_name, s.hospital || '', s.department, s.score,
-        ...s.answers.map((a, i) => a == null ? '(ไม่ทันตอบ)' : (t.questions[i].choices[a] || '(รูป)') + (a === t.questions[i].correct ? ' ✓' : ''))])));
+        ...s.answers.map((a, i) => ansCell(t.questions[i], a))])));
+    writesSheet(c.writes, add, false);
     if (t.survey_id) surveySheets(X, wb, this.svItems || [], this.resp, add);
     X.writeFile(wb, `PrePost-${t.title}-${new Date().toISOString().slice(0, 10)}.xlsx`.replace(/[\\/:*?"<>|]/g, '_'));
   }
@@ -2396,7 +2441,7 @@ const Report = {
         ${c.items.map(it => `<tr class="${it.post.pct != null && it.post.pct < 60 ? 'low' : ''}"><td>${it.n}</td>
           <td style="white-space:normal;min-width:220px">${esc(it.text)}</td><td class="num">${dash(it.pre.pct)}</td><td class="num">${dash(it.post.pct)}</td>
           <td style="white-space:normal">${it.post.wrong >= 0 ? `${esc(it.choices[it.post.wrong] || '(รูป)')} (${it.post.wrongN} คน)` : '–'}</td></tr>`).join('')}
-        </table></div>`;
+        </table></div>` + writesHTML(c.writes, trs.length > 1);
     } else {
       box.innerHTML = `<p class="hint">🔒 ไม่ระบุตัวตน · ผลรวมของ${many ? `ทั้ง ${trs.length} รอบ` : 'รอบนี้'}</p>` + surveyReportHTML(this.svItems || [], this.resp.filter(r => ids.has(r.training_id)));
     }
@@ -2427,11 +2472,12 @@ const Report = {
     if (c.items) add('รายข้อ', [['ข้อ', 'คำถาม', 'คำตอบที่ถูก', 'ถูก Pre %', 'ถูก Post ครั้งแรก %', 'ตอบผิดมากสุด (Post)', 'จำนวน']]
       .concat(c.items.map(it => [it.n, it.text, it.choices[it.correct] || '(รูป)', it.pre.pct ?? '', it.post.pct ?? '',
         it.post.wrong >= 0 ? (it.choices[it.post.wrong] || '(รูป)') : '', it.post.wrongN || ''])));
-    const maxQ = Math.max(0, ...trs.map(t => t.total));
+    const maxQ = Math.max(0, ...trs.map(t => (t.questions || []).length));
     add('คำตอบดิบ', [['รอบ', 'ครั้ง', 'สอบครั้งที่', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'คะแนน', 'เต็ม', ...Array.from({ length: maxQ }, (_, i) => `ข้อ ${i + 1}`)]]
       .concat(subs.map(s => { const t = tmap.get(s.training_id);
         return [roundName(t), s.phase === 'pre' ? (s.source === 'game' ? 'Pre (เกม)' : 'Pre') : 'Post', s.attempt, s.emp_id, s.full_name, s.hospital || '', s.department, s.score, s.total,
-          ...s.answers.map((a, i) => a == null ? '(ไม่ทันตอบ)' : (t.questions[i].choices[a] || '(รูป)') + (a === t.questions[i].correct ? ' ✓' : ''))]; })));
+          ...s.answers.map((a, i) => ansCell(t.questions[i], a))]; })));
+    writesSheet(c.writes, add, trs.length > 1);
     if (svId) surveySheets(X, wb, this.svItems || [], this.resp.filter(r => ids.has(r.training_id)), add);
     const name = trs.length === 1 ? trs[0].title : (trs[0].series || 'รวม ' + trs.length + ' รอบ');
     X.writeFile(wb, `PrePost-${name}-${new Date().toISOString().slice(0, 10)}.xlsx`.replace(/[\\/:*?"<>|]/g, '_'));

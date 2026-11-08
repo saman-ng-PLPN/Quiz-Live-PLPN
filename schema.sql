@@ -1292,3 +1292,322 @@ end $$;
 
 revoke execute on function public.create_training_series(uuid, text, jsonb, int, jsonb) from public, anon;
 grant execute on function public.create_training_series(uuid, text, jsonb, int, jsonb) to authenticated;
+
+-- =====================================================================
+-- 11) v9: ข้อเขียน (ไม่คิดคะแนน) — เก็บคำตอบไว้ในรายงาน แต่ไม่นำมาคิดผล
+--     - ใช้ได้ในแบบทดสอบ Pre/Post (ผู้ทำพิมพ์คำตอบเอง ต้องตอบทุกข้อ)
+--     - เกม (ทั้งเกมปกติและเกม Pre-test) ข้ามข้อเขียนให้อัตโนมัติ
+--     - คะแนนเต็ม (total) = จำนวนข้อปรนัย
+-- =====================================================================
+alter table public.questions add column if not exists kind text not null default 'choice';
+alter table public.questions alter column correct_index drop not null;
+do $$ declare c record; begin
+  for c in select conname from pg_constraint
+            where conrelid = 'public.questions'::regclass and contype = 'c'
+              and (pg_get_constraintdef(oid) ilike '%choices%' or pg_get_constraintdef(oid) ilike '%correct_index%'
+                   or pg_get_constraintdef(oid) ilike '%kind%')
+  loop execute format('alter table public.questions drop constraint %I', c.conname); end loop;
+end $$;
+alter table public.questions add constraint questions_shape_chk check (
+  (kind = 'text' and correct_index is null and jsonb_typeof(choices) = 'array')
+  or (kind = 'choice' and jsonb_typeof(choices) = 'array' and jsonb_array_length(choices) between 2 and 4
+      and correct_index is not null and correct_index >= 0 and correct_index < jsonb_array_length(choices)));
+
+create or replace function public.save_quiz(
+  p_id uuid, p_title text, p_department text, p_description text, p_questions jsonb,
+  p_cover text default null, p_shared boolean default false
+) returns uuid language plpgsql security invoker set search_path = public as $$
+declare v_id uuid;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not exists (select 1 from jsonb_array_elements(coalesce(p_questions, '[]'::jsonb)) q
+                  where coalesce(q ->> 'kind', 'choice') <> 'text') then
+    raise exception 'ต้องมีข้อปรนัย (มีตัวเลือก) อย่างน้อย 1 ข้อ';
+  end if;
+  if p_id is null then
+    insert into quizzes (title, department, description, cover_url, shared)
+    values (trim(p_title), trim(coalesce(p_department, '')), coalesce(p_description, ''), nullif(p_cover, ''),
+            coalesce(p_shared, false))
+    returning id into v_id;
+  else
+    update quizzes set title = trim(p_title), department = trim(coalesce(p_department, '')),
+                       description = coalesce(p_description, ''), cover_url = nullif(p_cover, ''),
+                       shared = coalesce(p_shared, false), updated_at = now()
+     where id = p_id and (owner_id = auth.uid() or public.is_admin())
+    returning id into v_id;
+    if v_id is null then raise exception 'ไม่มีสิทธิ์แก้ไขชุดคำถามนี้'; end if;
+    delete from questions where quiz_id = v_id;
+  end if;
+
+  insert into questions (quiz_id, position, kind, text, image_url, choices, correct_index, time_limit,
+                         colors, choice_images)
+  select v_id, (t.ord - 1)::int, k, trim(t.q ->> 'text'), nullif(t.q ->> 'image_url', ''),
+         case when k = 'text' then '[]'::jsonb else t.q -> 'choices' end,
+         case when k = 'text' then null else (t.q ->> 'correct_index')::int end,
+         coalesce((t.q ->> 'time_limit')::int, 20),
+         case when k = 'choice' and jsonb_typeof(t.q -> 'colors') = 'array'
+               and not exists (select 1 from jsonb_array_elements_text(t.q -> 'colors') c
+                                where c !~ '^#[0-9a-fA-F]{6}$')
+              then t.q -> 'colors' end,
+         case when k = 'choice' and jsonb_typeof(t.q -> 'choice_images') = 'array' then t.q -> 'choice_images' end
+    from jsonb_array_elements(coalesce(p_questions, '[]'::jsonb)) with ordinality as t(q, ord),
+         lateral (select case when t.q ->> 'kind' = 'text' then 'text' else 'choice' end as k) kk;
+  return v_id;
+end $$;
+
+create or replace function public.duplicate_quiz(p_id uuid)
+returns uuid language plpgsql security invoker set search_path = public as $$
+declare v_src quizzes; v_id uuid;
+begin
+  select * into v_src from quizzes where id = p_id;
+  if v_src.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  insert into quizzes (title, department, description, cover_url)
+  values (left(v_src.title || ' (สำเนา)', 200), v_src.department, v_src.description, v_src.cover_url)
+  returning id into v_id;
+  insert into questions (quiz_id, position, kind, text, image_url, choices, correct_index, time_limit,
+                         colors, choice_images)
+  select v_id, position, kind, text, image_url, choices, correct_index, time_limit, colors, choice_images
+    from questions where quiz_id = p_id;
+  return v_id;
+end $$;
+
+-- เกมปกติ: ข้ามข้อเขียน
+create or replace function public.create_session(p_quiz_id uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_quiz quizzes; v_qs jsonb; v_n int; v_pin text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into v_quiz from quizzes where id = p_quiz_id;
+  if v_quiz.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  if not (v_quiz.owner_id = auth.uid() or v_quiz.shared or public.is_admin()) then
+    raise exception 'ชุดคำถามนี้เป็นแบบส่วนตัว';
+  end if;
+
+  select jsonb_agg(jsonb_build_object(
+           'text', text, 'image_url', image_url, 'choices', choices,
+           'correct', correct_index, 'time', time_limit,
+           'colors', colors, 'images', choice_images) order by position), count(*)
+    into v_qs, v_n
+    from questions where quiz_id = p_quiz_id and kind <> 'text';
+  if v_n = 0 then raise exception 'ชุดคำถามนี้ยังไม่มีข้อปรนัยสำหรับเล่นเกม'; end if;
+
+  loop
+    v_pin := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from sessions where pin = v_pin and status <> 'ended');
+    i := i + 1;
+    if i > 50 then raise exception 'สร้างรหัสห้องไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+
+  insert into sessions (quiz_id, host_id, title, pin, questions, total_questions, cover_url)
+  values (p_quiz_id, auth.uid(), v_quiz.title, v_pin, v_qs, v_n, v_quiz.cover_url)
+  returning id into v_id;
+  return jsonb_build_object('session_id', v_id, 'pin', v_pin);
+end $$;
+
+-- รอบอบรม: เก็บข้อเขียนไว้ในสำเนาคำถาม (kind = text) · total = จำนวนข้อปรนัย
+create or replace function public.create_training(p_quiz_id uuid, p_title text, p_pass int default 80)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_quiz quizzes; v_qs jsonb; v_n int; v_code text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into v_quiz from quizzes where id = p_quiz_id;
+  if v_quiz.id is null then raise exception 'ไม่พบชุดคำถาม'; end if;
+  if not (v_quiz.owner_id = auth.uid() or v_quiz.shared or public.is_admin()) then
+    raise exception 'ชุดคำถามนี้เป็นแบบส่วนตัว';
+  end if;
+  select jsonb_agg(case when kind = 'text'
+             then jsonb_build_object('kind', 'text', 'text', text, 'image_url', image_url, 'choices', '[]'::jsonb)
+             else jsonb_build_object('text', text, 'image_url', image_url, 'choices', choices, 'correct', correct_index,
+                    'time', time_limit, 'colors', colors, 'images', choice_images) end order by position),
+         count(*) filter (where kind <> 'text')
+    into v_qs, v_n from questions where quiz_id = p_quiz_id;
+  if coalesce(v_n, 0) = 0 then raise exception 'ชุดคำถามนี้ยังไม่มีข้อปรนัย'; end if;
+  loop
+    v_code := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from trainings where code = v_code);
+    i := i + 1; if i > 50 then raise exception 'สร้างรหัสไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+  insert into trainings (quiz_id, title, code, pass_percent, questions, total, cover_url)
+  values (p_quiz_id, left(coalesce(nullif(trim(p_title), ''), v_quiz.title), 200), v_code,
+          least(100, greatest(0, coalesce(p_pass, 80))), v_qs, v_n, v_quiz.cover_url)
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'code', v_code);
+end $$;
+
+create or replace function public.test_info(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; sv surveys;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  select * into sv from surveys where id = t.survey_id;
+  return jsonb_build_object(
+    'title', t.title, 'cover_url', t.cover_url, 'total', t.total, 'count', jsonb_array_length(t.questions),
+    'pre_open', t.pre_open, 'post_open', t.post_open, 'pass_percent', t.pass_percent,
+    'shuffle', t.shuffle, 'retake', t.retake,
+    'departments', case when jsonb_typeof(t.departments) = 'array' then t.departments else public.list_departments() end,
+    'hospitals', public.list_hospitals(),
+    'survey', case when sv.id is not null then jsonb_build_object('title', sv.title, 'description', sv.description, 'items', sv.items) end,
+    'questions', case when t.pre_open or t.post_open then
+      (select jsonb_agg(jsonb_build_object('kind', coalesce(q ->> 'kind', 'choice'), 'text', q ->> 'text', 'image_url', q ->> 'image_url',
+              'choices', q -> 'choices', 'colors', q -> 'colors', 'images', q -> 'images') order by o)
+         from jsonb_array_elements(t.questions) with ordinality as x(q, o)) end);
+end $$;
+
+create or replace function public.test_status(p_code text, p_emp_id text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; v_emp text := upper(trim(coalesce(p_emp_id, ''))); last test_submissions; first test_submissions;
+        v_pre test_submissions; v_n int; v_passed boolean; v_wrong jsonb;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้'; end if;
+  select * into v_pre from test_submissions where training_id = t.id and phase = 'pre' and emp_id = v_emp order by attempt limit 1;
+  select count(*) into v_n from test_submissions where training_id = t.id and phase = 'post' and emp_id = v_emp;
+  select * into last  from test_submissions where training_id = t.id and phase = 'post' and emp_id = v_emp order by attempt desc limit 1;
+  select * into first from test_submissions where training_id = t.id and phase = 'post' and emp_id = v_emp order by attempt limit 1;
+  v_passed := last.id is not null and 100.0 * last.score / last.total >= t.pass_percent;
+  if last.id is not null and not v_passed then
+    select coalesce(jsonb_agg(o - 1), '[]'::jsonb) into v_wrong
+      from jsonb_array_elements(t.questions) with ordinality x(q, o)
+     where coalesce(q ->> 'kind', 'choice') <> 'text'
+       and (last.answers ->> (o - 1)::int) is distinct from (q ->> 'correct');
+  end if;
+  return jsonb_build_object(
+    'pre_done', v_pre.id is not null, 'pre_score', v_pre.score,
+    'post_attempts', v_n, 'post_passed', v_passed,
+    'survey_done', exists (select 1 from survey_done where training_id = t.id and emp_id = v_emp),
+    'has_survey', t.survey_id is not null,
+    'score', last.score, 'total', t.total, 'first_score', first.score,
+    'percent', case when last.id is not null then round(100.0 * last.score / t.total) end,
+    'last_answers', case when not v_passed then last.answers end,
+    'wrong', v_wrong);
+end $$;
+
+create or replace function public.submit_test(
+  p_code text, p_phase text, p_emp_id text, p_name text, p_hospital text, p_dept text, p_answers jsonb
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; v_score int := 0; i int; v_n int; v_ans int; v_pre test_submissions; v_att int; v_last test_submissions;
+        v_pass boolean; v_wrong jsonb := '[]'::jsonb; v_clean jsonb := '[]'::jsonb; q jsonb; v_txt text;
+        v_emp text := upper(trim(coalesce(p_emp_id, ''))); v_name text := trim(coalesce(p_name, ''));
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้'; end if;
+  if p_phase not in ('pre', 'post') then raise exception 'ระบุ Pre หรือ Post'; end if;
+  if (p_phase = 'pre' and not t.pre_open) or (p_phase = 'post' and not t.post_open) then
+    raise exception 'แบบทดสอบ %-test ปิดรับแล้ว', initcap(p_phase);
+  end if;
+  if v_emp = '' or v_name = '' then raise exception 'กรุณากรอกรหัสพนักงานและชื่อ-สกุล'; end if;
+  v_n := jsonb_array_length(t.questions);
+  if jsonb_typeof(p_answers) <> 'array' or jsonb_array_length(p_answers) <> v_n then
+    raise exception 'กรุณาตอบให้ครบทุกข้อ';
+  end if;
+  for i in 0 .. v_n - 1 loop
+    q := t.questions -> i;
+    if q ->> 'kind' = 'text' then
+      v_txt := case when jsonb_typeof(p_answers -> i) = 'string' then trim(p_answers ->> i) else '' end;
+      if v_txt = '' then raise exception 'กรุณาตอบข้อเขียนให้ครบ'; end if;
+      v_clean := v_clean || to_jsonb(left(v_txt, 2000));
+    else
+      if jsonb_typeof(p_answers -> i) <> 'number' then raise exception 'กรุณาตอบให้ครบทุกข้อ'; end if;
+      v_ans := (p_answers ->> i)::int;
+      v_clean := v_clean || to_jsonb(v_ans);
+      if v_ans = (q ->> 'correct')::int then v_score := v_score + 1;
+      else v_wrong := v_wrong || to_jsonb(i); end if;
+    end if;
+  end loop;
+
+  perform pg_advisory_xact_lock(hashtext(t.id::text || p_phase || v_emp));
+  select * into v_last from test_submissions where training_id = t.id and phase = p_phase and emp_id = v_emp
+   order by attempt desc limit 1;
+  if v_last.id is not null then
+    if p_phase = 'pre' then raise exception 'รหัสพนักงาน % ส่ง Pre-test ของรอบนี้ไปแล้ว', v_emp; end if;
+    if 100.0 * v_last.score / v_last.total >= t.pass_percent then raise exception 'ท่านสอบ Post-test ผ่านแล้ว'; end if;
+    if not t.retake then raise exception 'รหัสพนักงาน % ส่ง Post-test ของรอบนี้ไปแล้ว', v_emp; end if;
+  end if;
+  v_att := coalesce(v_last.attempt, 0) + 1;
+  insert into test_submissions (training_id, phase, emp_id, full_name, hospital, department, answers, score, total, attempt)
+  values (t.id, p_phase, v_emp, left(v_name, 120), left(trim(coalesce(p_hospital, '')), 120),
+          left(trim(coalesce(p_dept, '')), 120), v_clean, v_score, t.total, v_att);
+
+  if p_phase = 'pre' then return jsonb_build_object('ok', true, 'phase', 'pre'); end if;
+  v_pass := 100.0 * v_score / t.total >= t.pass_percent;
+  select * into v_pre from test_submissions where training_id = t.id and phase = 'pre' and emp_id = v_emp order by attempt limit 1;
+  return jsonb_build_object('ok', true, 'phase', 'post', 'score', v_score, 'total', t.total, 'attempt', v_att,
+    'percent', round(100.0 * v_score / t.total), 'pass', v_pass, 'pass_percent', t.pass_percent,
+    'retake', t.retake, 'pre_score', v_pre.score,
+    'wrong', case when v_pass then '[]'::jsonb else v_wrong end,
+    'need_survey', v_pass and t.survey_id is not null
+                   and not exists (select 1 from survey_done where training_id = t.id and emp_id = v_emp));
+end $$;
+
+-- เกม Pre-test: ข้ามข้อเขียน (จำเลขข้อของรอบไว้ใน ti เพื่อบันทึกผลให้ตรงข้อ)
+create or replace function public.create_pre_game(p_training uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; s sessions; v_qs jsonb; v_pin text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into t from trainings where id = p_training;
+  if t.id is null or not (t.owner_id = auth.uid() or public.is_admin()) then
+    raise exception 'ไม่พบรอบนี้ หรือไม่มีสิทธิ์';
+  end if;
+  select * into s from sessions where training_id = t.id and status <> 'ended' order by created_at desc limit 1;
+  if s.id is not null then
+    if s.host_id <> auth.uid() then
+      raise exception 'มีห้องเกม Pre-test ของรอบนี้เปิดอยู่แล้ว (PIN %) โดยผู้จัดอีกคน', s.pin;
+    end if;
+    return jsonb_build_object('session_id', s.id, 'pin', s.pin, 'resumed', true);
+  end if;
+
+  select jsonb_agg(x.q || jsonb_build_object('ti', x.o - 1, 'time', least(120, greatest(5, coalesce(
+           (x.q ->> 'time')::int,
+           (select time_limit from questions where quiz_id = t.quiz_id order by position offset (x.o - 1) limit 1),
+           20)))) order by x.o)
+    into v_qs from jsonb_array_elements(t.questions) with ordinality as x(q, o)
+   where coalesce(x.q ->> 'kind', 'choice') <> 'text';
+  if v_qs is null then raise exception 'รอบนี้ยังไม่มีข้อปรนัย'; end if;
+
+  loop
+    v_pin := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from sessions where pin = v_pin and status <> 'ended');
+    i := i + 1;
+    if i > 50 then raise exception 'สร้างรหัสห้องไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+  insert into sessions (quiz_id, host_id, title, pin, questions, total_questions, cover_url, training_id)
+  values (t.quiz_id, auth.uid(), t.title, v_pin, v_qs, jsonb_array_length(v_qs), t.cover_url, t.id)
+  returning id into v_id;
+  return jsonb_build_object('session_id', v_id, 'pin', v_pin);
+end $$;
+
+-- จบเกม Pre-test: คำตอบเรียงตามข้อของรอบ (ข้อเขียน = null) · คะแนนเต็ม = จำนวนข้อปรนัยของรอบ
+create or replace function public.finish_pre_game(p_session uuid)
+returns int language plpgsql security definer set search_path = public as $$
+declare s sessions; t trainings; v_n int;
+begin
+  select * into s from sessions where id = p_session;
+  if s.training_id is null then return 0; end if;
+  select * into t from trainings where id = s.training_id;
+  if t.id is null then return 0; end if;
+  insert into test_submissions (training_id, phase, emp_id, full_name, hospital, department,
+                                answers, score, total, attempt, source)
+  select t.id, 'pre', p.emp_id, left(coalesce(p.full_name, p.nickname), 120),
+         coalesce(p.hospital, ''), coalesce(p.department, ''),
+         (select jsonb_agg(case when x.q ->> 'kind' = 'text' then null else
+                   (select to_jsonb(a.choice) from answers a
+                     where a.player_id = p.id
+                       and a.question_index = coalesce(
+                             (select (g.k - 1)::int from jsonb_array_elements(s.questions) with ordinality g(gq, k)
+                               where (g.gq ->> 'ti')::int = x.o - 1 limit 1),
+                             case when not exists (select 1 from jsonb_array_elements(s.questions) gq where gq ? 'ti')
+                                  then (x.o - 1)::int end)) end order by x.o)
+            from jsonb_array_elements(t.questions) with ordinality as x(q, o)),
+         (select count(*) from answers a where a.player_id = p.id and a.is_correct),
+         t.total, 1, 'game'
+    from players p
+   where p.session_id = s.id and p.emp_id is not null
+     and exists (select 1 from answers a where a.player_id = p.id)
+     and not exists (select 1 from test_submissions x
+                      where x.training_id = s.training_id and x.phase = 'pre' and x.emp_id = p.emp_id)
+  on conflict do nothing;
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
