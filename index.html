@@ -1612,7 +1612,9 @@ const Test = {
   async route() {
     const st = this.st = await rpc('test_status', { p_code: this.code, p_emp_id: this.who.emp_id });
     const qs = this.info.questions || [], seed = `${this.code}|${this.who.emp_id}|${this.phase}`;
-    this.order = this.info.shuffle ? shuffledIdx(qs.length, seededRand(seed)) : qs.map((_, i) => i);
+    // สลับเฉพาะข้อปรนัย · ข้อเขียนไม่สลับ อยู่ท้ายทั้งหมดตามลำดับเดิม
+    const mcq = qs.map((_, i) => i).filter(i => !isText(qs[i])), essay = qs.map((_, i) => i).filter(i => isText(qs[i]));
+    this.order = (this.info.shuffle ? shuffledIdx(mcq.length, seededRand(seed)).map(k => mcq[k]) : mcq).concat(essay);
     this.corder = qs.map((q, i) => { const n = (q.choices || []).length;
       return this.info.shuffle ? shuffledIdx(n, seededRand(seed + '|' + i)) : Array.from({ length: n }, (_, k) => k); });
     if (this.phase === 'pre') return st.pre_done ? this.preDone() : this.questions();
