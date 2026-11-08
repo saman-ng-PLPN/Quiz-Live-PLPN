@@ -2249,6 +2249,26 @@ const Report = {
     onLeave(() => clearInterval(poll));
   },
   chosen() { return sortRounds(this.all.filter(t => this.sel.has(t.id))); },
+  // เลือกครบทุกรุ่นของชุดเดียว → แสดงปุ่มลบทั้งชุด
+  wholeSeries() { const c = this.chosen(), sid = c[0] && c[0].series_id;
+    return sid && c.every(t => t.series_id === sid) && this.all.filter(t => t.series_id === sid).length === c.length ? sid : null; },
+  async deleteSeries() {
+    const sid = this.wholeSeries(); if (!sid) return;
+    const c = this.chosen(), name = c[0].series || c[0].title, ids = new Set(c.map(t => t.id));
+    const nSub = this.subs.filter(s => ids.has(s.training_id)).length, nResp = this.resp.length;
+    const msg = `ลบทั้งชุด “${name}” ทั้ง ${c.length} รุ่น`
+      + (nSub || nResp ? `\nพร้อมผลสอบ ${nSub} รายการ และแบบประเมิน ${nResp} ชุด` : '\n(ยังไม่มีผลสอบ)') + '\nกู้คืนไม่ได้';
+    if (nSub || nResp) {
+      const typed = prompt(msg + `\n\nพิมพ์ชื่อชุดให้ตรงเพื่อยืนยัน:\n${name}`);
+      if (typed == null) return;
+      if (typed.trim() !== name.trim()) return toast('ชื่อชุดไม่ตรง ยังไม่ได้ลบ', true);
+    } else if (!confirm(msg)) return;
+    const { data, error } = await sb.from('trainings').delete().eq('series_id', sid).select('id');
+    if (error) return toast(errMsg(error), true);
+    const n = (data || []).length;
+    if (n < c.length) toast(`ลบได้ ${n} จาก ${c.length} รุ่น (รุ่นที่เหลือไม่ใช่ของคุณ)`, true); else toast(`ลบชุด “${name}” แล้ว`);
+    location.hash = '#admin';
+  },
   inView() { const c = this.chosen(); return this.view ? c.filter(t => t.id === this.view) : c; },
   commonSurvey(trs) { return trs.length && trs.every(t => t.survey_id && t.survey_id === trs[0].survey_id) ? trs[0].survey_id : null; },
   async load() {
@@ -2294,7 +2314,8 @@ const Report = {
         <select class="inp" id="view" style="width:auto;max-width:100%"><option value="">ทุกรอบที่เลือก (${c.length} รอบ)</option>${c.map(t =>
           `<option value="${t.id}" ${t.id === this.view ? 'selected' : ''}>${esc(roundName(t))}</option>`).join('')}</select>
         <div class="tabs" id="tabs"></div></div>
-      <div id="tbody" style="margin-top:12px"></div>` : '<div class="empty">เลือกรอบที่ต้องการรวมรายงานด้านบน</div>'}`);
+      <div id="tbody" style="margin-top:12px"></div>` : '<div class="empty">เลือกรอบที่ต้องการรวมรายงานด้านบน</div>'}
+      ${this.wholeSeries() ? `<div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="delseries">🗑 ลบทั้งชุด (${c.length} รุ่น)</button></div>` : ''}`);
     bindShell();
     $('#pick').onchange = e => {
       const s = e.target.dataset.s, id = e.target.dataset.t;
@@ -2305,6 +2326,7 @@ const Report = {
     $('#apply').onclick = async () => { history.replaceState(null, '', location.pathname + location.search + this.url());
       app.innerHTML = adminShell(this.user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`);
       await this.load(); this.render(); };
+    if ($('#delseries')) $('#delseries').onclick = () => this.deleteSeries();
     if (!c.length) return;
     $('#view').onchange = e => { this.view = e.target.value; this.renderBody(); };
     $('#xls').onclick = () => this.excel();
