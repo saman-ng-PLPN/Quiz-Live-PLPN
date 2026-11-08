@@ -508,6 +508,7 @@ function route() {
   const [page, arg] = location.hash.replace(/^#\/?/, '').split('/');
   if (page === 'admin') return Admin.list();
   if (page === 'edit') return Admin.edit(arg);
+  if (page === 'play') return Admin.playPage(arg);
   if (page === 'host') return Host.open(arg);
   if (page === 'training') return Training.open(arg);
   if (page === 'report') return Report.open(arg);
@@ -1043,6 +1044,25 @@ const Admin = {
       try { draw(await rpc('add_admin', { p_email: inp.value })); inp.value = ''; toast('เพิ่มผู้ดูแลแล้ว'); }
       catch (e) { toast(errMsg(e), true); }
     };
+  },
+  // ลิงก์ตรงสำหรับเริ่มเกม (เช่น ใส่ในสไลด์): #play/<รหัสชุดคำถาม> → หน้ายืนยัน → จอใหญ่
+  async playPage(id) {
+    setBody('admin');
+    const user = await requireStaff(); if (!user) return;
+    app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`); bindShell();
+    const { data: q } = await sb.from('quizzes').select('id,title,department,cover_url').eq('id', id).single();
+    if (!q) { toast('ไม่พบชุดคำถาม หรือไม่มีสิทธิ์', true); location.hash = '#admin'; return; }
+    const g = await sb.from('sessions').select('id,pin,training_id').eq('quiz_id', id).neq('status', 'ended').order('created_at', { ascending: false }).limit(5);
+    const open = (g.data || []).find(x => !x.training_id);
+    app.innerHTML = adminShell(user, `<div class="tcard" style="max-width:560px;margin:24px auto;text-align:center">
+      ${q.cover_url ? `<img src="${esc(q.cover_url)}" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px">` : ''}
+      <h2 style="margin:0">${esc(q.title)}</h2>
+      <p class="hint" style="margin:0">${q.department ? esc(q.department) + ' · ' : ''}เกมสด · จอใหญ่จะขึ้น QR และ PIN ให้ผู้เล่นสแกน</p>
+      ${open ? `<a class="btn lg" href="#host/${open.id}">กลับไปที่ห้องเดิม (PIN ${esc(open.pin)})</a>` : ''}
+      <button class="btn sun lg" id="go">▶ เริ่มเกม${open ? 'ใหม่' : ''}</button>
+      <a class="btn light sm" href="#admin">ไปหน้าผู้จัด</a></div>`);
+    bindShell();
+    $('#go').onclick = e => this.play(id, e.currentTarget);
   },
   async play(quizId, btn, force) {
     if (btn) btn.disabled = true;
