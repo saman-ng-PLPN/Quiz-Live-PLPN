@@ -1912,6 +1912,8 @@ const Training = {
     const { data: t, error } = await sb.from('trainings').select('*').eq('id', id).single();
     if (error || !t) { toast('ไม่พบรอบนี้ หรือไม่มีสิทธิ์', true); location.hash = '#admin'; return; }
     this.t = t;
+    const adm = await sb.rpc('is_admin'); this.isAdmin = adm.data === true;
+    this.canOwn = t.owner_id === user.id || this.isAdmin;   // เจ้าของ/ผู้ดูแล (ผู้จัดร่วมจัดการได้ แต่ลบรอบ/แก้ผู้จัดร่วมไม่ได้)
     const sv = await sb.from('surveys').select('id,title,owner_id,owner_email').order('updated_at', { ascending: false });
     this.surveys = sv.data || [];
     await this.loadAll();
@@ -1941,6 +1943,7 @@ const Training = {
     if (!tabs.some(x => x[0] === this.tab)) this.tab = 'sum';
     app.innerHTML = adminShell(this.user, `
       <div class="row"><a class="btn light sm" href="${t.series_id ? '#report/s=' + t.series_id : '#admin'}">← ${t.series_id ? 'ทุกรุ่น' : 'กลับ'}</a><h2 class="sec grow">${esc(t.title)}</h2></div>
+      ${!this.canOwn ? `<div class="notice" style="margin:8px 0 0">👥 คุณเป็น<b>ผู้จัดร่วม</b>ของรอบนี้ · เจ้าของ: ${esc(t.owner_email)}</div>` : ''}
       ${t.series_id ? `<p class="hint" style="margin:4px 0 0">📚 ชุด <b>${esc(t.series || '')}</b> · รุ่นที่ ${t.round_no || '–'} · <a href="#report/s=${t.series_id}">ดูรายงานรวมทุกรุ่น</a></p>` : ''}
       <div class="tcard">
         <div class="trow"><span class="phase">รหัส ${esc(t.code)}</span><span class="hint">${t.total} ข้อ · เกณฑ์ผ่าน <b>Post-test</b> (Pre-test ไม่ตัดสินผ่าน/ไม่ผ่าน)</span>
@@ -1958,7 +1961,8 @@ const Training = {
         <label class="switch"><input type="checkbox" id="sw-retake" ${t.retake ? 'checked' : ''}> <span>Post-test <b>สอบซ้ำได้จนกว่าจะผ่าน</b> (เห็นข้อที่ผิด ไม่เห็นเฉลย)</span></label>
         <label class="switch"><input type="checkbox" id="sw-shuffle" ${t.shuffle ? 'checked' : ''}> <span><b>สลับลำดับข้อและตัวเลือก</b>ของแต่ละคน (ลดการบอกต่อคำตอบ)</span></label>
         <div class="fld"><label for="svsel">แบบประเมินหลังสอบ Post-test ผ่าน</label>
-          <select class="inp" id="svsel"><option value="">— ไม่มีแบบประเมิน —</option>${this.surveys.map(s =>
+          <select class="inp" id="svsel"><option value="">— ไม่มีแบบประเมิน —</option>${t.survey_id && !this.surveys.some(s => s.id === t.survey_id)
+            ? `<option value="${t.survey_id}" selected>(แบบประเมินที่ผูกไว้)</option>` : ''}${this.surveys.map(s =>
             `<option value="${s.id}" ${s.id === t.survey_id ? 'selected' : ''}>${esc(s.title)}${s.owner_id !== this.user.id ? ` (${esc(s.owner_email)})` : ''}</option>`).join('')}</select>
           <p class="hint" style="margin:0">ไม่ระบุตัวตน · ทำครั้งเดียวหลังสอบผ่าน · สร้าง/แก้แบบประเมินได้ที่หน้าผู้จัด</p></div>
         ${t.series_id ? `<div class="row"><span class="hint grow">คัดลอกเกณฑ์ผ่าน การสอบซ้ำ การสลับข้อ แบบประเมิน และแผนก ไปยังรุ่นอื่นในชุด</span>
@@ -1971,12 +1975,21 @@ const Training = {
         <div id="dplist" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 12px;max-height:320px;overflow:auto"></div>
         <div class="row"><span class="hint grow" id="dpcount"></span><button class="btn sm" id="dpsave" type="button">บันทึกแผนกของรอบนี้</button></div>
       </details>
+      <details class="tcard" id="cobox"><summary style="cursor:pointer;font-weight:600" id="cosum"></summary>
+        <p class="hint" style="margin:0">ผู้จัดร่วมเห็นรอบนี้ในหน้าผู้จัดของตัวเอง · เปิด-ปิด Pre/Post · เริ่มเกม Pre-test · ตั้งค่า · ดูรายงาน · ส่งออก Excel ได้
+          <br>ลบรอบ และแก้รายชื่อผู้จัดร่วมไม่ได้ · ไม่เห็นชุดคำถามหรือรอบอื่นของเจ้าของ</p>
+        <div id="colist" style="display:grid;gap:6px"></div>
+        ${this.canOwn ? `<form class="row" id="coform" autocomplete="off" style="gap:8px">
+          <input class="inp grow" id="coemail" placeholder="อีเมล หรือชื่อหน้า @ (เช่น somchai.j)" style="min-width:0">
+          <button class="btn sm">+ เพิ่มผู้จัดร่วม</button></form>
+          ${t.series_id ? `<label class="switch"><input type="checkbox" id="coall" checked> <span>ใช้กับ<b>ทุกรุ่นในชุด</b> ${esc(t.series || '')}</span></label>` : ''}` : ''}
+      </details>
       <div class="row" style="margin-top:16px">
         <div class="tabs">${tabs.map(([k, v]) => `<button data-tab="${k}" class="${this.tab === k ? 'on' : ''}">${v}</button>`).join('')}</div>
         <span class="grow"></span><button class="btn sm" id="review">📊 ทบทวนข้อที่ผิดบ่อย (จอใหญ่)</button>
         <button class="btn light sm" id="xls">⬇ ส่งออก Excel</button></div>
       <div id="tbody" style="margin-top:12px"></div>
-      <div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="deltr">ลบรอบนี้</button></div>`);
+      ${this.canOwn ? '<div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="deltr">ลบรอบนี้</button></div>' : ''}`);
     bindShell();
     $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(this.link()); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(this.link()); } };
     $('#bigqr').onclick = () => showBigQR(this.t.title, this.link());
@@ -2017,13 +2030,42 @@ const Training = {
       toast(`อัปเดตแล้ว ${(data || []).length} รุ่น`);
     };
     this.bindDepts();
-    $('#deltr').onclick = async () => {
+    this.bindCohosts();
+    if ($('#deltr')) $('#deltr').onclick = async () => {
       if (!confirm(`ลบรอบ “${t.title}” และผลแบบทดสอบ/แบบประเมินทั้งหมด? กู้คืนไม่ได้`)) return;
       const { error } = await sb.from('trainings').delete().eq('id', this.id);
       if (error) return toast(errMsg(error), true);
       location.hash = '#admin';
     };
     this.renderBody();
+  },
+  bindCohosts() {
+    const draw = () => {
+      const list = this.t.cohosts || [];
+      $('#cosum').innerHTML = `👥 ผู้จัดร่วม <span class="hint">(${list.length ? list.length + ' คน' : 'ยังไม่มี'})</span>`;
+      $('#colist').innerHTML = list.map(e => `<div class="it" style="border-color:var(--line)"><span class="grow">${esc(e)}</span>
+        ${this.canOwn ? `<button class="btn danger sm" type="button" data-corm="${esc(e)}">นำออก</button>` : ''}</div>`).join('')
+        || '<p class="hint" style="margin:0">ยังไม่มีผู้จัดร่วม</p>';
+      $$('[data-corm]').forEach(b => b.onclick = () => save(list.filter(x => x !== b.dataset.corm), `นำ ${b.dataset.corm} ออก`));
+    };
+    const save = async (emails, what) => {
+      const all = !!($('#coall') && $('#coall').checked);
+      if (what && !confirm(`${what}${all ? ' จากทุกรุ่นในชุด' : ''}?`)) return;
+      try {
+        const r = await rpc('set_cohosts', { p_training: this.id, p_emails: emails, p_series: all });
+        this.t.cohosts = r.cohosts; draw(); toast(`บันทึกแล้ว${r.rounds > 1 ? ` (${r.rounds} รุ่น)` : ''}`); return true;
+      } catch (e) { toast(errMsg(e), true); return false; }
+    };
+    draw();
+    const f = $('#coform'); if (!f) return;
+    f.onsubmit = async ev => {
+      ev.preventDefault();
+      let e = $('#coemail').value.trim().toLowerCase(); if (!e) return;
+      if (!e.includes('@')) e += '@' + (CFG.ALLOWED_DOMAIN || '').toLowerCase();
+      if (e === (this.t.owner_email || '').toLowerCase()) return toast('อีเมลนี้เป็นเจ้าของรอบอยู่แล้ว', true);
+      if ((this.t.cohosts || []).includes(e)) return toast('มีในรายชื่อแล้ว', true);
+      if (await save([...(this.t.cohosts || []), e])) $('#coemail').value = '';
+    };
   },
   async bindDepts() {
     let master = []; try { master = await rpc('list_departments'); } catch (e) {}
@@ -2278,6 +2320,7 @@ const Report = {
     const user = await requireStaff(); if (!user) return;
     this.user = user;
     app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`); bindShell();
+    const adm = await sb.rpc('is_admin'); this.isAdmin = adm.data === true;
     const { data, error } = await sb.from('trainings')
       .select('id,title,code,series,series_id,round_label,round_no,pass_percent,pre_open,post_open,questions,total,survey_id,created_at,owner_id,owner_email')
       .order('created_at', { ascending: false }).limit(300);
@@ -2360,7 +2403,7 @@ const Report = {
           `<option value="${t.id}" ${t.id === this.view ? 'selected' : ''}>${esc(roundName(t))}</option>`).join('')}</select>
         <div class="tabs" id="tabs"></div></div>
       <div id="tbody" style="margin-top:12px"></div>` : '<div class="empty">เลือกรอบที่ต้องการรวมรายงานด้านบน</div>'}
-      ${this.wholeSeries() ? `<div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="delseries">🗑 ลบทั้งชุด (${c.length} รุ่น)</button></div>` : ''}`);
+      ${this.wholeSeries() && (this.isAdmin || c.every(t => t.owner_id === this.user.id)) ? `<div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="delseries">🗑 ลบทั้งชุด (${c.length} รุ่น)</button></div>` : ''}`);
     bindShell();
     $('#pick').onchange = e => {
       const s = e.target.dataset.s, id = e.target.dataset.t;

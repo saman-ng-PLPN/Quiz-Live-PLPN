@@ -1611,3 +1611,105 @@ begin
   get diagnostics v_n = row_count;
   return v_n;
 end $$;
+
+-- =====================================================================
+-- 12) v10: 👥 ผู้จัดร่วมของรอบ Pre/Post
+--     - เจ้าของรอบ/ผู้ดูแลระบบ ใส่อีเมลพนักงานเป็นผู้จัดร่วมได้ (ต่อรอบ หรือทั้งชุดหลักสูตร)
+--     - ผู้จัดร่วม: เห็นรอบนั้น เปิด-ปิด Pre/Post · ตั้งค่า · เกม Pre-test · รายงาน · Excel · ลบผลรายคน
+--     - ผู้จัดร่วมลบรอบ / แก้รายชื่อผู้จัดร่วมไม่ได้ · ไม่เห็นงานอื่นของเจ้าของ
+-- =====================================================================
+alter table public.trainings add column if not exists cohosts text[] not null default '{}';
+
+create or replace function public.is_cohost(p_cohosts text[]) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_staff() and coalesce(lower(auth.jwt() ->> 'email') = any(p_cohosts), false)
+$$;
+
+drop policy if exists trainings_owner on public.trainings;
+create policy trainings_owner on public.trainings for select to authenticated
+  using (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts));
+drop policy if exists trainings_owner_upd on public.trainings;
+create policy trainings_owner_upd on public.trainings for update to authenticated
+  using (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts))
+  with check (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts));
+
+-- กันผู้จัดร่วมแก้รายชื่อผู้จัดร่วม / เปลี่ยนเจ้าของ
+create or replace function public.trainings_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return new; end if;   -- งานภายในระบบ
+  if (new.cohosts is distinct from old.cohosts or new.owner_id is distinct from old.owner_id
+      or new.owner_email is distinct from old.owner_email)
+     and not (old.owner_id = auth.uid() or public.is_admin()) then
+    raise exception 'เฉพาะเจ้าของรอบหรือผู้ดูแลระบบที่แก้รายชื่อผู้จัดร่วมได้';
+  end if;
+  return new;
+end $$;
+drop trigger if exists trainings_guard on public.trainings;
+create trigger trainings_guard before update on public.trainings
+  for each row execute function public.trainings_guard();
+
+-- ตั้งรายชื่อผู้จัดร่วม (p_series = true → ทุกรุ่นในชุดเดียวกันที่เป็นของเรา)
+create or replace function public.set_cohosts(p_training uuid, p_emails jsonb, p_series boolean default false)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; v text[]; v_dom text; v_bad text; v_n int;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into t from trainings where id = p_training;
+  if t.id is null or not (t.owner_id = auth.uid() or public.is_admin()) then
+    raise exception 'เฉพาะเจ้าของรอบหรือผู้ดูแลระบบ';
+  end if;
+  if jsonb_typeof(coalesce(p_emails, '[]'::jsonb)) <> 'array' then raise exception 'รายชื่อไม่ถูกต้อง'; end if;
+  select lower(allowed_domain) into v_dom from app_config where id = 1;
+  select coalesce(array_agg(distinct e), '{}') into v
+    from (select lower(trim(x)) e from jsonb_array_elements_text(coalesce(p_emails, '[]'::jsonb)) x) s
+   where e <> '' and e <> lower(coalesce(t.owner_email, ''));
+  select e into v_bad from unnest(v) e where e !~ ('^[^@\s]+@' || replace(v_dom, '.', '\.') || '$') limit 1;
+  if v_bad is not null then raise exception 'ใช้ได้เฉพาะอีเมล @% (%)', v_dom, v_bad; end if;
+  if cardinality(v) > 20 then raise exception 'ผู้จัดร่วมได้ไม่เกิน 20 คน'; end if;
+  update trainings set cohosts = v
+   where (id = t.id or (p_series and t.series_id is not null and series_id = t.series_id))
+     and (owner_id = auth.uid() or public.is_admin());
+  get diagnostics v_n = row_count;
+  return jsonb_build_object('cohosts', to_jsonb(v), 'rounds', v_n);
+end $$;
+revoke execute on function public.set_cohosts(uuid, jsonb, boolean) from public, anon;
+grant execute on function public.set_cohosts(uuid, jsonb, boolean) to authenticated;
+
+-- เกม Pre-test: ผู้จัดร่วมเปิดได้
+create or replace function public.create_pre_game(p_training uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; s sessions; v_qs jsonb; v_pin text; v_id uuid; i int := 0;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  select * into t from trainings where id = p_training;
+  if t.id is null or not (t.owner_id = auth.uid() or public.is_admin() or public.is_cohost(t.cohosts)) then
+    raise exception 'ไม่พบรอบนี้ หรือไม่มีสิทธิ์';
+  end if;
+  select * into s from sessions where training_id = t.id and status <> 'ended' order by created_at desc limit 1;
+  if s.id is not null then
+    if s.host_id <> auth.uid() then
+      raise exception 'มีห้องเกม Pre-test ของรอบนี้เปิดอยู่แล้ว (PIN %) โดยผู้จัดอีกคน', s.pin;
+    end if;
+    return jsonb_build_object('session_id', s.id, 'pin', s.pin, 'resumed', true);
+  end if;
+
+  select jsonb_agg(x.q || jsonb_build_object('ti', x.o - 1, 'time', least(120, greatest(5, coalesce(
+           (x.q ->> 'time')::int,
+           (select time_limit from questions where quiz_id = t.quiz_id order by position offset (x.o - 1) limit 1),
+           20)))) order by x.o)
+    into v_qs from jsonb_array_elements(t.questions) with ordinality as x(q, o)
+   where coalesce(x.q ->> 'kind', 'choice') <> 'text';
+  if v_qs is null then raise exception 'รอบนี้ยังไม่มีข้อปรนัย'; end if;
+
+  loop
+    v_pin := lpad(floor(random() * 1000000)::int::text, 6, '0');
+    exit when not exists (select 1 from sessions where pin = v_pin and status <> 'ended');
+    i := i + 1;
+    if i > 50 then raise exception 'สร้างรหัสห้องไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+  end loop;
+  insert into sessions (quiz_id, host_id, title, pin, questions, total_questions, cover_url, training_id)
+  values (t.quiz_id, auth.uid(), t.title, v_pin, v_qs, jsonb_array_length(v_qs), t.cover_url, t.id)
+  returning id into v_id;
+  return jsonb_build_object('session_id', v_id, 'pin', v_pin);
+end $$;
