@@ -1382,7 +1382,10 @@ const Host = {
     this.game = sb.channel('game-' + sid).subscribe();
     const poll = setInterval(() => this.sync(), 4000);
     const tick = setInterval(() => this.tick(), 200);
-    onLeave(() => { clearInterval(poll); clearInterval(tick); sb.removeChannel(ch); sb.removeChannel(this.game); });
+    const wake = () => { GameAudio.ensure(); this.music(); this.sndBtn(); };
+    document.addEventListener('pointerdown', wake);
+    onLeave(() => { clearInterval(poll); clearInterval(tick); sb.removeChannel(ch); sb.removeChannel(this.game);
+      document.removeEventListener('pointerdown', wake); GameAudio.stop(); });
     this.render();
   },
   pick: r => ({ id: r.id, nickname: r.nickname, avatar: r.avatar, score: r.score, last_points: r.last_points }),
@@ -1415,10 +1418,27 @@ const Host = {
   topbar(extra = '') {
     return `<div class="stg-top"><span class="brand">${brandHTML()}</span>
       <span class="pill">${esc(this.s.title)}</span>${this.pre ? '<span class="pill">📝 Pre-test</span>' : ''}<span class="pill sun">PIN ${esc(this.s.pin)}</span>${extra}
-      <div class="stg-actions"><button class="btn ghost sm" id="fs">⛶ เต็มจอ</button>
+      <div class="stg-actions"><button class="btn ghost sm" id="snd" title="เพลงและเสียงประกอบ"></button><button class="btn ghost sm" id="fs">⛶ เต็มจอ</button>
       ${this.phase !== 'ended' ? '<button class="btn ghost sm" id="endg">จบเกม</button>' : ''}</div></div>`;
   },
+  sndBtn() { const b = $('#snd'); if (!b) return;
+    b.textContent = !GameAudio.on ? '🔇 เสียงปิด' : GameAudio.ready() ? '🔊 เสียง' : '🔊 แตะเพื่อเปิดเสียง'; },
+  // เพลงตามช่วงของเกม (หน้าคะแนน/จบเกม เล่นเสียงครั้งเดียวต่อข้อ)
+  music() {
+    const key = this.phase + ':' + this.s.current_index;
+    if (this.phase === 'lobby') GameAudio.loop('lobby');
+    else if (this.phase === 'question') {
+      if (this.qKey !== key) { this.qKey = key; GameAudio.lastSec = null; GameAudio.stopLoop(); }
+      if (GameAudio.mode !== 'hurry') GameAudio.loop('question');
+    }
+    else if (this.sfxKey !== key && GameAudio.ready()) {
+      this.sfxKey = key;
+      if (this.phase === 'ended') GameAudio.fanfare(); else GameAudio.jingle();
+    } else if (this.phase !== 'ended') GameAudio.stopLoop();
+  },
   bindTop() {
+    $('#snd').onclick = () => { GameAudio.setOn(!GameAudio.on); GameAudio.ensure(); this.music(); this.sndBtn(); };
+    this.sndBtn(); this.music();
     $('#fs').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
     const e = $('#endg'); if (e) e.onclick = async () => {
       if (!confirm(this.pre ? 'จบเกมตอนนี้เลย?\nผลที่ตอบไปแล้วจะบันทึกเป็น Pre-test (ข้อที่ยังไม่ถึงนับเป็นตอบผิด)' : 'จบเกมตอนนี้เลย?')) return;
@@ -1505,7 +1525,8 @@ const Host = {
     const q = this.q(), left = Math.max(0, (this.deadline - Date.now()) / 1000), tm = $('#tm');
     if (tm) { tm.style.setProperty('--p', (100 * left / q.time) + '%'); tm.firstChild.textContent = Math.ceil(left);
       tm.classList.toggle('low', left > 0 && left <= 5); }
-    if (left <= 0 && !this.revealing) { this.revealing = true; setTimeout(() => this.reveal(), 1300); }
+    GameAudio.countdown(left);
+    if (left <= 0 && !this.revealing) { this.revealing = true; GameAudio.buzzer(); this.sfxKey = 'board:' + this.s.current_index; setTimeout(() => this.reveal(), 1300); }
   },
   async reveal() {
     if (this.phase !== 'question') return;
@@ -1603,6 +1624,119 @@ const Host = {
     a.href = URL.createObjectURL(new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
     a.download = `ผลเกม-${this.s.title}-${new Date().toISOString().slice(0, 10)}.csv`.replace(/[\\/:*?"<>|]/g, '_');
     document.body.appendChild(a); a.click(); a.remove();
+  }
+};
+
+// =====================================================================
+// เสียงในเกม (จอใหญ่) — สังเคราะห์ด้วย Web Audio ทั้งหมด ไม่ใช้ไฟล์เพลง (ไม่มีลิขสิทธิ์)
+// lobby = เพลงสบายๆ รอคนเข้า · question = เพลงจังหวะสนุก · 5 วินาทีสุดท้ายเร่งจังหวะ + เสียงนับถอยหลัง
+// หมดเวลา = เสียงบัซเซอร์ · หน้าคะแนน = จิงเกิ้ลสั้น · จบเกม = แฟนแฟร์
+// =====================================================================
+const GameAudio = {
+  on: (() => { try { return localStorage.getItem('quizlive.sound') !== 'off'; } catch (e) { return true; } })(),
+  ctx: null, master: null, timer: null, mode: null, step: 0, nextT: 0, bpm: 120, lastSec: null, noiseBuf: null,
+  ensure() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain(); this.master.gain.value = 0.55;
+      const comp = this.ctx.createDynamicsCompressor(); this.master.connect(comp); comp.connect(this.ctx.destination);
+      const n = this.ctx.sampleRate, b = this.ctx.createBuffer(1, n, n), d = b.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      this.noiseBuf = b;
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    return this.ctx;
+  },
+  ready() { return this.on && this.ctx && this.ctx.state === 'running'; },
+  setOn(v) {
+    this.on = v; try { localStorage.setItem('quizlive.sound', v ? 'on' : 'off'); } catch (e) {}
+    if (!v) this.stopLoop(); else if (this.want) this.loop(this.want);
+  },
+  hz: m => 440 * Math.pow(2, (m - 69) / 12),
+  tone(t, freq, dur, type = 'square', vol = 0.12, glideTo) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + 0.02);
+  },
+  noise(t, dur, vol, hp, bp) {
+    const c = this.ctx, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = this.noiseBuf; f.type = bp ? 'bandpass' : 'highpass'; f.frequency.value = bp || hp || 7000;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.master); src.start(t); src.stop(t + dur + 0.02);
+  },
+  kick(t, v = 0.5) { this.tone(t, 150, 0.22, 'sine', v, 45); },
+  // C – G – Am – F (เพลงแต่งเอง ใช้คอร์ดพื้นฐาน)
+  PROG: [[48, [60, 64, 67, 72]], [43, [59, 62, 67, 71]], [45, [60, 64, 69, 72]], [41, [60, 65, 69, 72]]],
+  MELODY: [72, -1, 76, 74, 72, -1, 67, -1, 69, -1, 72, 74, 76, -1, 74, -1],
+  playStep(t, i) {
+    const bar = Math.floor(i / 16) % 4, k = i % 16, [root, ch] = this.PROG[bar], m = this.mode, dur = 60 / this.bpm / 4;
+    if (m === 'lobby') {
+      if (k % 8 === 0) this.kick(t, 0.28);
+      if (k % 4 === 2) this.noise(t, 0.05, 0.05);
+      if (k % 4 === 0) this.tone(t, this.hz(root), dur * 3.5, 'triangle', 0.16);
+      if (k % 2 === 0) this.tone(t, this.hz(ch[(k / 2) % 4]), dur * 1.8, 'triangle', 0.06);
+      return;
+    }
+    // question / hurry
+    const hurry = m === 'hurry';
+    if (k % 4 === 0 || (hurry && k % 4 === 2)) this.kick(t, hurry && k % 4 === 2 ? 0.35 : 0.5);
+    if (k % 2 === 1 || hurry) this.noise(t, 0.04, hurry ? 0.1 : 0.06);
+    if (k === 4 || k === 12) this.noise(t, 0.12, 0.16, 0, 1800);
+    if (k % 2 === 0) this.tone(t, this.hz(root + (k % 4 === 2 ? 12 : 0)), dur * 1.6, 'sawtooth', 0.07);
+    this.tone(t, this.hz(ch[k % 4] + (hurry ? 12 : 0)), dur * 0.8, 'square', hurry ? 0.06 : 0.035);
+    if (hurry && k % 4 === 0) this.tone(t, this.hz(84 + (bar % 2) * 2), dur * 0.9, 'square', 0.05);   // เสียงเตือนเร่ง
+    const mel = this.MELODY[k]; if (mel > 0 && bar % 2 === 0 && !hurry) this.tone(t, this.hz(mel), dur * 1.8, 'triangle', 0.08);
+  },
+  loop(mode) {
+    this.want = mode;
+    if (!this.on || !this.ensure()) return;
+    this.bpm = mode === 'lobby' ? 104 : mode === 'hurry' ? 168 : 128;
+    if (this.mode === mode && this.timer) return;
+    const fresh = !this.timer; this.mode = mode;
+    if (!fresh) return;
+    this.step = 0; this.nextT = this.ctx.currentTime + 0.06;
+    this.timer = setInterval(() => {
+      if (!this.ctx) return;
+      while (this.nextT < this.ctx.currentTime + 0.12) { this.playStep(this.nextT, this.step++); this.nextT += 60 / this.bpm / 4; }
+    }, 25);
+  },
+  stopLoop() { clearInterval(this.timer); this.timer = null; this.mode = null; },
+  stop() { this.want = null; this.stopLoop(); this.lastSec = null; },
+  // เรียกทุก tick ระหว่างคำถาม: 5 วินาทีสุดท้ายเร่งจังหวะ + ติ๊ก
+  countdown(left) {
+    if (!this.ready()) return;
+    const sec = Math.ceil(left);
+    if (left > 0 && left <= 5) {
+      if (this.mode !== 'hurry') this.loop('hurry');
+      if (sec !== this.lastSec) { this.lastSec = sec; const t = this.ctx.currentTime;
+        this.tone(t, sec <= 2 ? 1568 : 1175, 0.09, 'square', 0.14); }
+    }
+  },
+  buzzer() {
+    this.stop(); if (!this.on || !this.ensure()) return;
+    const c = this.ctx, t = c.currentTime + 0.02;
+    [[220, 'sawtooth', 0.22], [233, 'square', 0.12]].forEach(([f, type, v]) => {
+      const o = c.createOscillator(), g = c.createGain(); o.type = type;
+      o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * 0.6, t + 0.7);
+      g.gain.setValueAtTime(v, t); g.gain.setValueAtTime(v, t + 0.55); g.gain.linearRampToValueAtTime(0.0001, t + 0.75);
+      o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.8);
+    });
+  },
+  jingle() {
+    this.stop(); if (!this.on || !this.ensure()) return;
+    const t = this.ctx.currentTime + 0.05;
+    [72, 76, 79, 84].forEach((m, i) => this.tone(t + i * 0.09, this.hz(m), 0.22, 'triangle', 0.12));
+    this.noise(t + 0.36, 0.25, 0.08);
+  },
+  fanfare() {
+    this.stop(); if (!this.on || !this.ensure()) return;
+    const t = this.ctx.currentTime + 0.05, seq = [[67, 0], [72, .15], [76, .3], [79, .45], [76, .7], [79, .85], [84, 1.05]];
+    seq.forEach(([m, d]) => { this.tone(t + d, this.hz(m), 0.35, 'square', 0.08); this.tone(t + d, this.hz(m - 12), 0.35, 'triangle', 0.1); });
+    this.kick(t + 1.05, 0.5); this.noise(t + 1.05, 0.6, 0.1);
   }
 };
 
