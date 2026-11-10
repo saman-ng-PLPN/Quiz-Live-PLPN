@@ -421,20 +421,35 @@ body.stage{background:radial-gradient(1200px 700px at 85% -10%, #21506f 0%, tran
 .sumline b{color:var(--sun)}
 
 .board{flex:1;display:flex;flex-direction:column;gap:14px;max-width:1100px;width:100%;margin:0 auto}
+/* จอใหญ่ทุกหน้าพอดี 1 จอ: ปุ่มถัดไปอยู่ในจอเสมอ ไม่ต้องเลื่อน */
+.stg.fitv{height:100dvh;min-height:0;overflow:hidden}
+.stg.fitv .board,.stg.fitv .qwrap{min-height:0}
+.lbwrap{flex:1 1 0;min-height:0}
+.stg.fitv .qimgbig{min-height:0;flex:0 1 auto;max-height:30vh}
+.stg.fitv .tile{min-height:clamp(52px,8vh,130px)}
+.stg.fitv .podium{min-height:0;flex:1 1 0;overflow:hidden;padding-top:6px}
+.stg.fitv .pod{gap:6px}
+.stg.fitv .pod .av.xl{width:clamp(48px,min(9vw,11vh),130px);height:clamp(48px,min(9vw,11vh),130px)}
+.stg.fitv .pod .nm{font-size:clamp(16px,min(2.2vw,3.6vh),34px)}
+.stg.fitv .pod .block{font-size:clamp(24px,min(5vw,6vh),90px)}
+.stg.fitv .rest{flex:0 1 auto;max-height:20vh;overflow-y:auto;min-height:0}
+.stg.fitv .board h1{font-size:clamp(24px,min(3.4vw,5.5vh),52px)}
+.stg.fitv .board .sumline{margin:0}
+.stg.fitv .pod.p1 .block{height:clamp(70px,17vh,320px)} .stg.fitv .pod.p2 .block{height:clamp(54px,12vh,240px)} .stg.fitv .pod.p3 .block{height:clamp(40px,8vh,180px)}
 .board h1{margin:0;font-size:clamp(28px,3.4vw,52px);text-align:center}
 .lb{position:relative;--row:clamp(48px,6.6vh,72px)}
 .lbrow{position:absolute;left:0;right:0;height:calc(var(--row) - 8px);display:flex;align-items:center;gap:14px;
   transition:transform .9s cubic-bezier(.5,0,.2,1), opacity .6s}
-.lbrow .rk{width:clamp(36px,3.4vw,52px);text-align:right;font-size:clamp(20px,2.2vw,32px);font-weight:800;opacity:.85;flex:none}
+.lbrow .rk{width:clamp(36px,3.4vw,52px);text-align:right;font-size:min(clamp(20px,2.2vw,32px),calc(var(--row) * .5));font-weight:800;opacity:.85;flex:none}
 .lbrow .bar{position:relative;flex:1;height:100%;border-radius:14px;background:rgba(255,255,255,.08);overflow:hidden}
 .lbrow .bar i{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--navy3),#2f6e95);border-radius:14px;
   transition:width .9s cubic-bezier(.5,0,.2,1)}
 .lbrow.top1 .bar i{background:linear-gradient(90deg,#c48a00,var(--sun))}
 .lbrow.top2 .bar i{background:linear-gradient(90deg,#7c8b97,#c8d3dc)}
 .lbrow.top3 .bar i{background:linear-gradient(90deg,#8a4b1f,#d3884b)}
-.lbrow .nm{position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:clamp(18px,2vw,30px);font-weight:600;
+.lbrow .nm{position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:min(clamp(18px,2vw,30px),calc(var(--row) * .45));font-weight:600;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
-.lbrow .sc{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:clamp(18px,2vw,30px);font-weight:800}
+.lbrow .sc{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:min(clamp(18px,2vw,30px),calc(var(--row) * .45));font-weight:800}
 .lbrow .plus{font-size:.6em;font-weight:700;color:var(--sun);margin-right:10px;opacity:0;transition:opacity .4s .6s}
 .lbrow.go .plus{opacity:1}
 
@@ -1527,7 +1542,7 @@ const Host = {
   },
   rQuestion() {
     const q = this.q();
-    app.innerHTML = `<div class="stg">${this.topbar(`<span class="pill">ข้อ ${this.s.current_index + 1} / ${this.s.total_questions}</span>
+    app.innerHTML = `<div class="stg fitv">${this.topbar(`<span class="pill">ข้อ ${this.s.current_index + 1} / ${this.s.total_questions}</span>
         <span class="pill" id="ac">ตอบแล้ว 0/${this.players.size}</span>`)}
       <div class="qwrap"><div class="qline"><div class="timer" id="tm"><span>${q.time}</span></div>
         <h1 class="qtext">${esc(q.text)}</h1></div>
@@ -1600,19 +1615,23 @@ const Host = {
     const now = this.sorted(), before = this.sorted(p => this.prev.has(p.id) ? this.prev.get(p.id) : p.score - p.last_points);
     const prevRank = new Map(before.map((p, i) => [p.id, i]));
     const show = now.slice(0, 10), max = Math.max(1, now[0] ? now[0].score : 1);
-    app.innerHTML = `<div class="stg">${this.topbar(`<span class="pill">หลังข้อ ${this.s.current_index + 1} / ${this.s.total_questions}</span>`)}
+    app.innerHTML = `<div class="stg fitv">${this.topbar(`<span class="pill">หลังข้อ ${this.s.current_index + 1} / ${this.s.total_questions}</span>`)}
       <div class="board">${this.answerBar()}<h1>อันดับคะแนน</h1>
-        <div class="lb" id="lb" style="height:calc(var(--row) * ${Math.max(1, show.length)})">${show.map(p => {
+        <div class="lbwrap" id="lbw"><div class="lb" id="lb" style="height:calc(var(--row) * ${Math.max(1, show.length)})">${show.map(p => {
           const from = Math.min(prevRank.get(p.id) ?? 10, 10), old = p.score - p.last_points;
           return `<div class="lbrow" data-id="${p.id}" style="transform:translateY(calc(var(--row) * ${from}));opacity:${from >= 10 ? 0 : 1}">
             <span class="rk">${from + 1}</span>
             <div class="bar"><i style="width:${Math.max(4, 100 * old / max)}%"></i>
               <span class="nm">${avatarHTML(p.avatar, p.nickname)}<span>${esc(p.nickname)}</span></span>
-              <span class="sc">${p.last_points ? `<span class="plus">+${fmt(p.last_points)}</span>` : ''}<span class="num" data-from="${old}" data-to="${p.score}">${fmt(old)}</span></span></div></div>`; }).join('')}</div>
+              <span class="sc">${p.last_points ? `<span class="plus">+${fmt(p.last_points)}</span>` : ''}<span class="num" data-from="${old}" data-to="${p.score}">${fmt(old)}</span></span></div></div>`; }).join('')}</div></div>
         ${now.length > 10 ? `<p class="sumline" style="opacity:.7">และอีก ${now.length - 10} คน · ทุกคนดูอันดับตัวเองได้บนมือถือ</p>` : ''}
         <div class="row" style="justify-content:flex-end;margin-top:auto">
           <button class="btn sun lg" id="nx">${last ? 'ดูผลสุดท้าย 🏆' : 'ข้อถัดไป →'}</button></div></div></div>`;
     this.bindTop();
+    // แถวอันดับย่อให้พอดีพื้นที่ (ปุ่มถัดไปอยู่ในจอเสมอ)
+    const fitLb = () => { const w = $('#lbw'), lb = $('#lb'); if (!w || !lb) return;
+      lb.style.setProperty('--row', Math.max(30, Math.min(72, Math.floor(w.clientHeight / Math.max(1, show.length)))) + 'px'); };
+    fitLb(); window.addEventListener('resize', fitLb); onLeave(() => window.removeEventListener('resize', fitLb));
     $('#nx').onclick = () => this.next();
     setTimeout(() => {
       show.forEach((p, i) => {
@@ -1627,7 +1646,7 @@ const Host = {
   },
   async rEnded() {
     const list = this.sorted(), pods = [list[1], list[0], list[2]], cls = ['p2', 'p1', 'p3'], rank = [2, 1, 3];
-    app.innerHTML = `<div class="stg">${this.topbar()}
+    app.innerHTML = `<div class="stg fitv">${this.topbar()}
       <div class="board"><h1>🏆 สรุปผล</h1>
         <div class="podium">${pods.map((p, i) => p ? `<div class="pod ${cls[i]}">${avatarHTML(p.avatar, p.nickname, 'xl')}<div class="nm">${esc(p.nickname)}</div>
           <div class="sc">${fmt(p.score)} คะแนน</div><div class="block">${rank[i]}</div></div>` : '').join('')}</div>
