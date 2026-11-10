@@ -2144,7 +2144,11 @@ function writesSheet(writes, add, showRound) {
   add('ข้อเขียน', [[...(showRound ? ['รอบ'] : []), 'ข้อ', 'คำถาม', 'ครั้ง', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'คำตอบ']]
     .concat(writes.flatMap(w => w.ans.map(a => [...(showRound ? [roundName(a.r.t)] : []), w.n, w.text, a.ph, a.r.emp_id, a.r.name, a.r.hosp || '', a.r.dept || '', a.text]))));
 }
-const ansCell = (q, a) => isText(q) ? (typeof a === 'string' ? a : '') : a == null ? '(ไม่ทันตอบ)' : (q.choices[a] || '(รูป)') + (a === q.correct ? ' ✓' : '');
+// ตัวเลือกที่ได้คะแนน: correct + also (กรณีแก้เฉลยหลังเริ่มอบรม ให้คะแนนได้มากกว่า 1 ตัวเลือก)
+const rightSet = q => [q.correct, ...(Array.isArray(q.also) ? q.also : [])];
+const isRight = (q, a) => a != null && rightSet(q).includes(a);
+const keyText = q => rightSet(q).map(k => q.choices[k] || '(รูป)').join(' หรือ ');
+const ansCell = (q, a) => isText(q) ? (typeof a === 'string' ? a : '') : a == null ? '(ไม่ทันตอบ)' : (q.choices[a] || '(รูป)') + (isRight(q, a) ? ' ✓' : '');
 function prepostCalc(trs, subs, done) {
   const tmap = new Map(trs.map(t => [t.id, t])), pct = s => s ? Math.round(100 * s.score / s.total) : null;
   const people = new Map();
@@ -2182,8 +2186,10 @@ function prepostCalc(trs, subs, done) {
   const items = !same ? null : trs[0].questions.map((q, i) => isText(q) ? null : (() => {
     const f = ss => { if (!ss.length) return { pct: null, wrong: -1, wrongN: 0, n: 0, cnt: q.choices.map(() => 0) };
       const cnt = q.choices.map(() => 0); ss.forEach(x => { const a = x.answers[i]; if (cnt[a] !== undefined) cnt[a]++; });
-      let wrong = -1; cnt.forEach((c, k) => { if (k !== q.correct && c > 0 && (wrong < 0 || c > cnt[wrong])) wrong = k; });
-      return { pct: Math.round(100 * cnt[q.correct] / ss.length), wrong, wrongN: wrong >= 0 ? cnt[wrong] : 0, n: ss.length, cnt }; };
+      let wrong = -1; cnt.forEach((c, k) => { if (!isRight(q, k) && c > 0 && (wrong < 0 || c > cnt[wrong])) wrong = k; });
+      // ถูก/ผิด ตามเฉลยของรอบที่คนนั้นสอบ (รอบเก่าอาจให้คะแนนเพิ่มบางตัวเลือก)
+      const right = ss.filter(x => isRight((tmap.get(x.training_id) || trs[0]).questions[i] || q, x.answers[i])).length;
+      return { pct: Math.round(100 * right / ss.length), right, wrong, wrongN: wrong >= 0 ? cnt[wrong] : 0, n: ss.length, cnt }; };
     return { n: i + 1, q, text: q.text, correct: q.correct, choices: q.choices, pre: f(firstPre), post: f(firstPost) };
   })()).filter(Boolean);
   // ข้อเขียน: คำตอบ Pre ครั้งแรก และ Post ครั้งล่าสุดของแต่ละคน
@@ -2452,10 +2458,10 @@ const Training = {
     const draw = () => {
       const it = slides[k], d = it[src], q = it.q, max = Math.max(1, ...d.cnt);
       el.innerHTML = `<div class="rvtop"><span class="pill">${src === 'post' ? 'Post-test ครั้งแรก' : 'Pre-test'} · ${k + 1}/${slides.length}</span>
-          <span class="pill sun">ตอบผิด ${100 - d.pct}% (${d.n - d.cnt[q.correct]} จาก ${d.n} คน)</span><span class="grow"></span>
+          <span class="pill sun">ตอบผิด ${100 - d.pct}% (${d.n - d.right} จาก ${d.n} คน)</span><span class="grow"></span>
           <button class="btn ghost sm" data-x>ปิด ✕</button></div>
         <h1 class="qtext">${esc(q.text)}</h1>${q.image_url ? `<img class="qimgbig" src="${esc(q.image_url)}" alt="">` : ''}
-        <div class="tiles ${hasImgs(q.images) ? 'imgs' : ''}">${q.choices.map((ch, i) => `<div class="tile ${i === q.correct ? 'correct' : 'dim'}" style="${chipStyle(q.colors, i)}">
+        <div class="tiles ${hasImgs(q.images) ? 'imgs' : ''}">${q.choices.map((ch, i) => `<div class="tile ${isRight(q, i) ? 'correct' : 'dim'}" style="${chipStyle(q.colors, i)}">
           <i class="fill" style="width:${100 * d.cnt[i] / max}%"></i><b><span>${LETTERS[i]}</span></b>${choiceBody(ch, imgAt(q.images, i))}<span class="cnt">${d.cnt[i]}</span></div>`).join('')}</div>
         <div class="row" style="justify-content:space-between"><button class="btn ghost" data-p ${k ? '' : 'disabled'}>← ก่อนหน้า</button>
           <button class="btn sun" data-n ${k < slides.length - 1 ? '' : 'disabled'}>ถัดไป →</button></div>`;
@@ -2488,7 +2494,7 @@ const Training = {
     add('รายแผนก', [['โรงพยาบาล', 'แผนก', 'จำนวนคน', 'เฉลี่ย Pre %', 'เฉลี่ย Post ครั้งแรก %', 'ผ่าน (คน)', 'ทำ Post (คน)', 'ผ่าน %']]
       .concat(c.depts.map(d => [d.hosp, d.dept, d.n, d.pre ?? '', d.post ?? '', d.passN, d.postN, d.postN ? Math.round(100 * d.passN / d.postN) : ''])));
     add('รายข้อ', [['ข้อ', 'คำถาม', 'คำตอบที่ถูก', 'ถูก Pre %', 'ถูก Post ครั้งแรก %', 'ตอบผิดมากสุด (Post)', 'จำนวน']]
-      .concat(c.items.map(it => [it.n, it.text, it.choices[it.correct] || '(รูป)', it.pre.pct ?? '', it.post.pct ?? '',
+      .concat(c.items.map(it => [it.n, it.text, keyText(it.q), it.pre.pct ?? '', it.post.pct ?? '',
         it.post.wrong >= 0 ? (it.choices[it.post.wrong] || '(รูป)') : '', it.post.wrongN || ''])));
     add('คำตอบดิบ', [['ครั้ง', 'สอบครั้งที่', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'คะแนน', ...t.questions.map((q, i) => `ข้อ ${i + 1}`)]]
       .concat(this.subs.map(s => [s.phase === 'pre' ? (s.source === 'game' ? 'Pre (เกม)' : 'Pre') : 'Post', s.attempt, s.emp_id, s.full_name, s.hospital || '', s.department, s.score,
@@ -2810,7 +2816,7 @@ const Report = {
     add('รายแผนก', [['โรงพยาบาล', 'แผนก', 'จำนวนคน', 'เฉลี่ย Pre %', 'เฉลี่ย Post ครั้งแรก %', 'ผ่าน (คน)', 'ทำ Post (คน)', 'ผ่าน %']]
       .concat(c.depts.map(d => [d.hosp, d.dept, d.n, d.pre ?? '', d.post ?? '', d.passN, d.postN, d.postN ? Math.round(100 * d.passN / d.postN) : ''])));
     if (c.items) add('รายข้อ', [['ข้อ', 'คำถาม', 'คำตอบที่ถูก', 'ถูก Pre %', 'ถูก Post ครั้งแรก %', 'ตอบผิดมากสุด (Post)', 'จำนวน']]
-      .concat(c.items.map(it => [it.n, it.text, it.choices[it.correct] || '(รูป)', it.pre.pct ?? '', it.post.pct ?? '',
+      .concat(c.items.map(it => [it.n, it.text, keyText(it.q), it.pre.pct ?? '', it.post.pct ?? '',
         it.post.wrong >= 0 ? (it.choices[it.post.wrong] || '(รูป)') : '', it.post.wrongN || ''])));
     const maxQ = Math.max(0, ...trs.map(t => (t.questions || []).length));
     add('คำตอบดิบ', [['รอบ', 'ครั้ง', 'สอบครั้งที่', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'โรงพยาบาล', 'แผนก', 'คะแนน', 'เต็ม', ...Array.from({ length: maxQ }, (_, i) => `ข้อ ${i + 1}`)]]
