@@ -377,6 +377,20 @@ body.stage{background:radial-gradient(1200px 700px at 85% -10%, #21506f 0%, tran
 .chip{background:#fff;color:var(--navy);font-weight:600;padding:8px 16px;border-radius:99px;font-size:clamp(15px,1.4vw,21px);
   border:0;animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
 .chip:hover{text-decoration:line-through;background:#ffe1e1}
+/* หน้ารอคนเข้า: พอดี 1 จอเสมอ — QR ย่อตามพื้นที่ที่เหลือ รายชื่อเลื่อนในกล่องของตัวเอง */
+.stg.lobbyv{height:100dvh;min-height:0;overflow:hidden}
+.stg.lobbyv .lobby{flex:1 1 0;min-height:0;align-items:stretch}
+.stg.lobbyv .joininfo{align-self:center;min-height:0}
+.stg.lobbyv .joininfo .pin{font-size:clamp(56px,min(10vw,15vh),150px)}
+.stg.lobbyv .lobby-cover{max-height:18vh}
+.stg.lobbyv .qrcell{min-height:0;justify-content:center}
+.stg.lobbyv .qrbox{flex:none;aspect-ratio:auto}
+.stg.lobbyv .lobby-bar{flex:0 0 auto;padding-top:10px}
+.stg.lobbyv .chips{flex:0 1 auto;max-height:26vh;min-height:44px;padding-bottom:4px}
+.chips.many .chip{font-size:clamp(13px,1.05vw,17px);padding:4px 12px 4px 4px}
+.chips.many .chip .av{width:26px;height:26px}
+.chips.lots .chip{font-size:clamp(12px,.9vw,15px);padding:2px 10px 2px 3px}
+.chips.lots .chip .av{width:22px;height:22px}
 @keyframes pop{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
 
 .qwrap{flex:1;display:flex;flex-direction:column;gap:clamp(12px,1.6vw,22px)}
@@ -1453,7 +1467,7 @@ const Host = {
 
   rLobby() {
     const url = this.joinUrl();
-    app.innerHTML = `<div class="stg">${this.topbar()}
+    app.innerHTML = `<div class="stg lobbyv">${this.topbar()}
       <div class="lobby"><div class="joininfo">
           ${this.s.cover_url ? `<img class="lobby-cover" src="${esc(this.s.cover_url)}" alt="">` : ''}
           <p>สแกน QR หรือเปิดเว็บด้วยมือถือ</p>
@@ -1468,6 +1482,7 @@ const Host = {
     this.bindTop();
     try { new QRCode($('#qr'), { text: url, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M }); }
     catch (e) { $('#qr').textContent = url; }
+    const fit = () => this.fitQR(); window.addEventListener('resize', fit); onLeave(() => window.removeEventListener('resize', fit));
     $('#start').onclick = () => this.next();
     $('#chips').onclick = async e => {
       const c = e.target.closest('[data-pid]'); if (!c) return;
@@ -1477,6 +1492,14 @@ const Host = {
     };
     this.onPlayers();
   },
+  // QR ใหญ่ที่สุดเท่าที่พื้นที่เหลือ (หลังหักแถบล่างและรายชื่อ) ให้ทั้งหน้าอยู่ใน 1 จอ
+  fitQR() {
+    const cell = $('.qrcell'), box = $('#qr'), cap = $('.qrcap'); if (!cell || !box) return;
+    box.style.width = box.style.height = '150px';
+    const h = cell.clientHeight - (cap ? cap.offsetHeight + 10 : 0), w = cell.clientWidth;
+    const n = Math.max(150, Math.floor(Math.min(w, h, 720)));
+    box.style.width = box.style.height = n + 'px';
+  },
   onPlayers() {
     if (this.phase !== 'lobby') return this.onAnswers();
     const box = $('#chips'); if (!box) return;
@@ -1485,6 +1508,8 @@ const Host = {
     for (const p of this.players.values()) if (!have.has(p.id))
       box.insertAdjacentHTML('beforeend', `<button class="chip" data-pid="${p.id}" data-name="${esc(p.nickname)}">${avatarHTML(p.avatar, p.nickname)}${esc(p.nickname)}</button>`);
     $('#pc').textContent = this.players.size;
+    box.classList.toggle('many', this.players.size > 12); box.classList.toggle('lots', this.players.size > 30);
+    this.fitQR();
     $('#start').disabled = this.players.size === 0;
   },
 
