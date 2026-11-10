@@ -1996,3 +1996,96 @@ begin
 end $$;
 revoke execute on function public.rescore_training(uuid) from public, anon;
 grant execute on function public.rescore_training(uuid) to authenticated;
+
+-- =====================================================================
+-- 15) v13: รายชื่อผู้จองอบรม (roster) — Apps Script ส่งข้อมูลมาอัปเดตเอง
+--     - หน้า Pre/Post: ใส่รหัสพนักงาน → เติมชื่อ-แผนกจากรายชื่อผู้จอง · จองรุ่นอื่นไว้ → เตือนก่อนทำ
+--     - ค้นได้เฉพาะรอบที่ผูก roster ไว้ (trainings.roster) และกำลังเปิดรับ Pre/Post เท่านั้น
+--     - คีย์สำหรับ Apps Script: app_config.roster_key (อ่านไม่ได้จากหน้าเว็บ)
+--       ตั้ง/เปลี่ยนคีย์: update app_config set roster_key = '<คีย์ยาว>' where id = 1;
+-- =====================================================================
+alter table public.app_config add column if not exists roster_key text;
+alter table public.trainings add column if not exists roster text;
+
+create table if not exists public.roster (
+  source     text not null,
+  emp_key    text not null,               -- รหัสพนักงานแบบเทียบได้ (ตัวพิมพ์ใหญ่ ตัด 0 นำหน้า)
+  emp_id     text not null,
+  full_name  text not null default '',
+  dept       text not null default '',
+  slot       text not null default '',    -- เช่น "11 พ.ย. เช้า" (ตรงกับชื่อรุ่น)
+  slot_text  text not null default '',    -- เช่น "11 พฤศจิกายน 2569 10:00 น."
+  updated_at timestamptz not null default now(),
+  primary key (source, emp_key)
+);
+alter table public.roster enable row level security;
+revoke all on public.roster from anon, authenticated;
+grant select on public.roster to authenticated;
+drop policy if exists roster_admin_read on public.roster;
+create policy roster_admin_read on public.roster for select to authenticated using (public.is_admin());
+
+create or replace function public.roster_norm(p text) returns text
+language sql immutable as $$ select ltrim(upper(regexp_replace(coalesce(p, ''), '\s', '', 'g')), '0') $$;
+
+-- Apps Script เรียก: แทนที่รายชื่อทั้งหมดของ source นั้น
+create or replace function public.sync_roster(p_key text, p_source text, p_rows jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_key text; v_n int;
+begin
+  select roster_key into v_key from app_config where id = 1;
+  if v_key is null or length(v_key) < 24 or p_key is distinct from v_key then raise exception 'คีย์ไม่ถูกต้อง'; end if;
+  if coalesce(trim(p_source), '') = '' or jsonb_typeof(p_rows) <> 'array' then raise exception 'ข้อมูลไม่ถูกต้อง'; end if;
+  if jsonb_array_length(p_rows) > 20000 then raise exception 'รายชื่อมากเกินไป'; end if;
+  delete from roster where source = trim(p_source);
+  insert into roster (source, emp_key, emp_id, full_name, dept, slot, slot_text)
+  select distinct on (public.roster_norm(r ->> 'emp_id'))
+         trim(p_source), public.roster_norm(r ->> 'emp_id'), left(trim(r ->> 'emp_id'), 30),
+         left(trim(coalesce(r ->> 'full_name', '')), 120), left(trim(coalesce(r ->> 'dept', '')), 120),
+         left(trim(coalesce(r ->> 'slot', '')), 60), left(trim(coalesce(r ->> 'slot_text', '')), 120)
+    from jsonb_array_elements(p_rows) with ordinality x(r, o)
+   where public.roster_norm(r ->> 'emp_id') <> ''
+   order by public.roster_norm(r ->> 'emp_id'), o desc;
+  get diagnostics v_n = row_count;
+  return jsonb_build_object('ok', true, 'rows', v_n, 'at', now());
+end $$;
+revoke execute on function public.sync_roster(text, text, jsonb) from public;
+grant execute on function public.sync_roster(text, text, jsonb) to anon, authenticated;
+
+-- หน้า Pre/Post: ค้นจากรหัสพนักงาน (เฉพาะรอบที่ผูก roster และกำลังเปิดรับ)
+create or replace function public.roster_lookup(p_code text, p_emp text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; r roster; v_label text;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null or t.roster is null or not (t.pre_open or t.post_open) then return null; end if;
+  if public.roster_norm(p_emp) = '' then return null; end if;
+  select * into r from roster where source = t.roster and emp_key = public.roster_norm(p_emp);
+  if r.emp_key is null then return jsonb_build_object('found', false); end if;
+  v_label := coalesce(t.round_label, t.title);
+  return jsonb_build_object('found', true, 'full_name', r.full_name, 'dept', r.dept,
+    'slot', r.slot, 'slot_text', r.slot_text,
+    'this_round', r.slot = '' or position(r.slot in v_label) > 0);
+end $$;
+revoke execute on function public.roster_lookup(text, text) from public;
+grant execute on function public.roster_lookup(text, text) to anon, authenticated;
+
+-- test_info: บอกหน้าเว็บว่ารอบนี้มีรายชื่อผู้จองให้ค้น
+create or replace function public.test_info(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; sv surveys;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบแบบทดสอบนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  select * into sv from surveys where id = t.survey_id;
+  return jsonb_build_object(
+    'title', t.title, 'cover_url', t.cover_url, 'total', t.total, 'count', jsonb_array_length(t.questions),
+    'pre_open', t.pre_open, 'post_open', t.post_open, 'pass_percent', t.pass_percent,
+    'shuffle', t.shuffle, 'retake', t.retake, 'roster', t.roster is not null,
+    'departments', case when jsonb_typeof(t.departments) = 'array' then t.departments else public.list_departments() end,
+    'hospitals', public.list_hospitals(),
+    'survey', case when sv.id is not null then jsonb_build_object('title', sv.title, 'description', sv.description, 'items', sv.items) end,
+    'questions', case when t.pre_open or t.post_open then
+      (select jsonb_agg(jsonb_build_object('kind', coalesce(q ->> 'kind', 'choice'), 'text', q ->> 'text', 'image_url', q ->> 'image_url',
+              'choices', q -> 'choices', 'colors', q -> 'colors', 'images', q -> 'images') order by o)
+         from jsonb_array_elements(t.questions) with ordinality as x(q, o)) end);
+end $$;

@@ -307,6 +307,8 @@ table.rep tr.low td{background:#fff5f5}
 .switch input:checked{background:var(--good)}
 .switch input:checked::after{transform:translateX(20px)}
 .notice{background:#fff4d4;border:1px solid #f0d78c;border-radius:12px;padding:10px 14px;font-size:14px;margin-top:12px}
+.notice.ok{background:#e3f4ea;border-color:#a9dcbd;color:#17583a;margin-top:6px}
+.notice.warn{background:#fff1e6;border-color:#f3b98c;color:#8a3d0a;margin-top:6px}
 .adminbox{margin-top:28px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:4px 16px}
 .adminbox summary{cursor:pointer;font-weight:600;padding:12px 0}
 .adminbox .it{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px dashed var(--line)}
@@ -1878,7 +1880,8 @@ const Test = {
       <form class="tcard" id="tf" autocomplete="off">
         <div class="seg">${['pre', 'post'].map(ph => `<label><input type="radio" name="ph" value="${ph}" ${ph === phase ? 'checked' : ''}
           ${i[ph + '_open'] ? '' : 'disabled'}>${ph === 'pre' ? 'Pre-test<br><small>ก่อนอบรม</small>' : 'Post-test<br><small>หลังอบรม</small>'}</label>`).join('')}</div>
-        <div class="fld"><label for="t-emp">รหัสพนักงาน *</label><input class="inp" id="t-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters"></div>
+        <div class="fld"><label for="t-emp">รหัสพนักงาน *</label><input class="inp" id="t-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters" inputmode="text">
+          ${i.roster ? '<div id="rbox" class="hint" style="margin:4px 0 0">ใส่รหัสพนักงาน ระบบจะดึงชื่อและแผนกจากรายชื่อผู้จองอบรมให้</div>' : ''}</div>
         <div class="fld"><label for="t-name">ชื่อ-นามสกุล *</label><input class="inp" id="t-name" maxlength="120" value="${esc(me.name || '')}"></div>
         ${hosps.length ? `<div class="fld"><label>โรงพยาบาล *</label><div class="seg">${hosps.map(h =>
           `<label><input type="radio" name="hosp" value="${esc(h)}" ${h === me.hospital || hosps.length === 1 ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div>` : ''}
@@ -1892,8 +1895,36 @@ const Test = {
       </form></main>`;
     const other = $('#t-dept-other'), sel = $('#t-dept');
     if (other) { sel.onchange = () => { other.hidden = sel.value !== '__other'; if (!other.hidden) other.focus(); }; other.hidden = sel.value !== '__other'; }
+    // รายชื่อผู้จองอบรม: ใส่รหัส → เติมชื่อ/แผนก · จองรุ่นอื่นไว้ → เตือน
+    this.hit = null;
+    if (i.roster) {
+      const emp = $('#t-emp'), rbox = $('#rbox'); let last = '', timer = null;
+      const look = async () => {
+        const v = emp.value.trim(); if (v === last) return; last = v; this.hit = null;
+        if (v.length < 2) { rbox.className = 'hint'; rbox.textContent = 'ใส่รหัสพนักงาน ระบบจะดึงชื่อและแผนกจากรายชื่อผู้จองอบรมให้'; return; }
+        let r = null; try { r = await rpc('roster_lookup', { p_code: this.code, p_emp: v }); } catch (e) { return; }
+        if (emp.value.trim() !== v) return;
+        if (!r || !r.found) { rbox.className = 'hint'; rbox.textContent = 'ไม่พบในรายชื่อผู้จอง · กรอกชื่อและแผนกเองได้'; return; }
+        this.hit = r;
+        if (r.full_name) $('#t-name').value = r.full_name;
+        if (r.dept) {
+          if (sel.tagName === 'SELECT') {
+            if ([...sel.options].some(o => o.value === r.dept)) { sel.value = r.dept; if (other) other.hidden = true; }
+            else if (other) { sel.value = '__other'; other.hidden = false; other.value = r.dept; }
+          } else sel.value = r.dept;
+        }
+        rbox.className = r.this_round ? 'notice ok' : 'notice warn';
+        rbox.innerHTML = r.this_round ? `✓ พบในรายชื่อผู้จอง${r.slot_text ? ' · ' + esc(r.slot_text) : ''}`
+          : `⚠️ ท่านจองไว้รอบ <b>${esc(r.slot_text || r.slot)}</b> ไม่ใช่รุ่นนี้ · ตรวจสอบว่าสแกน QR ถูกรุ่น`;
+      };
+      emp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(look, 450); });
+      emp.addEventListener('change', look);
+      if (emp.value.trim()) look();
+    }
     $('#tf').onsubmit = async ev => {
       ev.preventDefault();
+      if (this.hit && this.hit.found && !this.hit.this_round
+          && !confirm(`ท่านจองไว้รอบ ${this.hit.slot_text || this.hit.slot}\nไม่ใช่รุ่นนี้ ต้องการทำแบบทดสอบของรุ่นนี้ต่อหรือไม่?`)) return;
       const dept = sel.value === '__other' ? other.value.trim() : sel.value.trim();
       const h = $('input[name=hosp]:checked');
       const who = { emp_id: $('#t-emp').value.trim().toUpperCase(), name: $('#t-name').value.trim(), dept, hospital: h ? h.value : '' };
