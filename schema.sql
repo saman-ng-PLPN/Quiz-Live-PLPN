@@ -2089,3 +2089,419 @@ begin
               'choices', q -> 'choices', 'colors', q -> 'colors', 'images', q -> 'images') order by o)
          from jsonb_array_elements(t.questions) with ordinality as x(q, o)) end);
 end $$;
+
+-- =====================================================================
+-- 16) v14: งานอบรม (course) — จอง → ลงทะเบียนเข้า → Pre → Post → ประเมิน → ลงชื่อจบ
+--     - งานอบรม 1 งาน มีหลายรุ่น (รุ่น = แถวใน trainings เดิม ผูกด้วย course_id)
+--     - เพิ่มแบบไม่กระทบของเดิม: หน้าเว็บเดิมยังใช้ trainings / test_* ได้เหมือนเดิม
+--     - ลายเซ็นเก็บใน storage bucket 'signatures' (ส่วนตัว) · ตารางเก็บแค่ path
+-- =====================================================================
+create table if not exists public.courses (
+  id           uuid primary key default gen_random_uuid(),
+  owner_id     uuid not null default auth.uid(),
+  owner_email  text not null default coalesce(auth.jwt() ->> 'email', ''),
+  title        text not null check (char_length(title) between 1 and 200),
+  cert_title   text not null default '',          -- ชื่อหลักสูตรเต็ม (หัวใบลงชื่อ)
+  location     text not null default '',
+  seats        int  not null default 0 check (seats between 0 and 5000),   -- ที่นั่งต่อรุ่น (0 = ไม่จำกัด)
+  hospitals    jsonb,                              -- null = ทุก รพ. ในรายชื่อหลัก
+  departments  jsonb,                              -- null = ทุกแผนก
+  steps        jsonb not null default '{"booking":true,"checkin":true,"pre":true,"post":true,"survey":true,"finish":true}',
+  booking_code text unique,                        -- รหัสลิงก์/QR การจอง
+  booking_open boolean not null default false,
+  booking_close_days int not null default 1 check (booking_close_days between 0 and 60),
+  quiz_id      uuid references public.quizzes(id) on delete set null,
+  survey_id    uuid references public.surveys(id) on delete set null,
+  pass_percent int not null default 80 check (pass_percent between 0 and 100),
+  finish_pin_enabled boolean not null default true,
+  finish_pin   text not null default '',
+  roster_source text,                              -- แหล่งรายชื่อพนักงาน/ผู้จอง (roster.source)
+  sheet_export boolean not null default false,
+  cohosts      text[] not null default '{}',
+  created_at   timestamptz not null default now()
+);
+
+alter table public.trainings add column if not exists course_id    uuid references public.courses(id) on delete set null;
+alter table public.trainings add column if not exists starts_at    timestamptz;
+alter table public.trainings add column if not exists ends_at      timestamptz;
+alter table public.trainings add column if not exists seats        int;           -- null = ใช้ของงาน
+alter table public.trainings add column if not exists checkin_open boolean not null default false;
+alter table public.trainings add column if not exists finish_open  boolean not null default false;
+create index if not exists trainings_course_idx on public.trainings (course_id) where course_id is not null;
+
+create table if not exists public.bookings (
+  id          bigint generated always as identity primary key,
+  course_id   uuid not null references public.courses(id) on delete cascade,
+  training_id uuid not null references public.trainings(id) on delete cascade,
+  emp_id      text not null,
+  emp_key     text not null,
+  full_name   text not null,
+  department  text not null default '',
+  hospital    text not null default '',
+  source      text not null default 'web' check (source in ('web', 'sheet', 'admin')),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (course_id, emp_key)
+);
+create index if not exists bookings_training_idx on public.bookings (training_id);
+
+create table if not exists public.attendance (
+  id          bigint generated always as identity primary key,
+  training_id uuid not null references public.trainings(id) on delete cascade,
+  emp_id      text not null,
+  emp_key     text not null,
+  full_name   text not null,
+  department  text not null default '',
+  hospital    text not null default '',
+  walk_in     boolean not null default false,
+  checkin_at  timestamptz,
+  checkin_sig text,
+  finish_at   timestamptz,
+  finish_sig  text,
+  unique (training_id, emp_key)
+);
+
+-- ---------- สิทธิ์ ----------
+create or replace function public.can_manage_course(p_course uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from courses c where c.id = p_course
+    and (c.owner_id = auth.uid() or public.is_admin() or public.is_cohost(c.cohosts)))
+$$;
+create or replace function public.can_manage_training(p_training uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from trainings t where t.id = p_training
+    and (t.owner_id = auth.uid() or public.is_admin() or public.is_cohost(t.cohosts)
+         or (t.course_id is not null and public.can_manage_course(t.course_id))))
+$$;
+
+alter table public.courses    enable row level security;
+alter table public.bookings   enable row level security;
+alter table public.attendance enable row level security;
+revoke all on public.courses, public.bookings, public.attendance from anon;
+grant select, insert, update, delete on public.courses to authenticated;
+grant select, delete on public.bookings, public.attendance to authenticated;
+
+drop policy if exists courses_sel on public.courses;
+create policy courses_sel on public.courses for select to authenticated
+  using (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts));
+drop policy if exists courses_ins on public.courses;
+create policy courses_ins on public.courses for insert to authenticated
+  with check (public.is_staff() and owner_id = auth.uid());
+drop policy if exists courses_upd on public.courses;
+create policy courses_upd on public.courses for update to authenticated
+  using (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts))
+  with check (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts));
+drop policy if exists courses_del on public.courses;
+create policy courses_del on public.courses for delete to authenticated
+  using (owner_id = auth.uid() or public.is_admin());
+
+drop policy if exists bookings_sel on public.bookings;
+create policy bookings_sel on public.bookings for select to authenticated using (public.can_manage_course(course_id));
+drop policy if exists bookings_del on public.bookings;
+create policy bookings_del on public.bookings for delete to authenticated using (public.can_manage_course(course_id));
+drop policy if exists attendance_sel on public.attendance;
+create policy attendance_sel on public.attendance for select to authenticated using (public.can_manage_training(training_id));
+drop policy if exists attendance_del on public.attendance;
+create policy attendance_del on public.attendance for delete to authenticated using (public.can_manage_training(training_id));
+
+-- ผู้จัดร่วมแก้รายชื่อผู้จัดร่วม/เจ้าของไม่ได้
+create or replace function public.courses_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return new; end if;
+  if (new.cohosts is distinct from old.cohosts or new.owner_id is distinct from old.owner_id
+      or new.owner_email is distinct from old.owner_email)
+     and not (old.owner_id = auth.uid() or public.is_admin()) then
+    raise exception 'เฉพาะเจ้าของงานหรือผู้ดูแลระบบที่แก้รายชื่อผู้จัดร่วมได้';
+  end if;
+  return new;
+end $$;
+drop trigger if exists courses_guard on public.courses;
+create trigger courses_guard before update on public.courses
+  for each row execute function public.courses_guard();
+
+-- รหัสจองอัตโนมัติ (6 หลัก ไม่ซ้ำกับงานอื่น)
+create or replace function public.courses_code() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v text; i int := 0;
+begin
+  if new.booking_code is null or new.booking_code = '' then
+    loop
+      v := lpad(floor(random() * 1000000)::int::text, 6, '0');
+      exit when not exists (select 1 from courses where booking_code = v);
+      i := i + 1; if i > 50 then raise exception 'สร้างรหัสไม่สำเร็จ'; end if;
+    end loop;
+    new.booking_code := v;
+  end if;
+  return new;
+end $$;
+drop trigger if exists courses_code on public.courses;
+create trigger courses_code before insert on public.courses
+  for each row execute function public.courses_code();
+
+-- ---------- ลายเซ็น (bucket ส่วนตัว) ----------
+-- path: <training_id>/<ชื่อไฟล์>.png · อัปโหลดได้ (ไม่ต้องล็อกอิน) แต่อ่าน/ลบได้เฉพาะผู้จัดของรุ่น
+insert into storage.buckets (id, name, public)
+values ('signatures', 'signatures', false)
+on conflict (id) do nothing;
+update storage.buckets set file_size_limit = 300000, allowed_mime_types = array['image/png']
+ where id = 'signatures';
+
+create or replace function public.signature_slot_open(p_name text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(p_name ~ '^[0-9a-f-]{36}/[A-Za-z0-9_-]{1,80}\.png$', false)
+     and exists (select 1 from trainings t where t.id::text = split_part(p_name, '/', 1)
+                   and (t.checkin_open or t.finish_open))
+$$;
+grant execute on function public.signature_slot_open(text) to anon, authenticated;
+drop policy if exists signatures_upload on storage.objects;
+create policy signatures_upload on storage.objects for insert to anon, authenticated
+  with check (bucket_id = 'signatures' and public.signature_slot_open(name));
+create or replace function public.can_manage_signature(p_name text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if coalesce(p_name, '') !~ '^[0-9a-f-]{36}/' then return false; end if;
+  return public.can_manage_training(split_part(p_name, '/', 1)::uuid);
+exception when others then return false;
+end $$;
+grant execute on function public.can_manage_signature(text) to authenticated;
+drop policy if exists signatures_read on storage.objects;
+create policy signatures_read on storage.objects for select to authenticated
+  using (bucket_id = 'signatures'
+         and public.can_manage_signature(name));
+drop policy if exists signatures_delete on storage.objects;
+create policy signatures_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'signatures'
+         and public.can_manage_signature(name));
+
+-- ---------- ฟังก์ชันช่วย ----------
+-- ที่นั่งของรุ่น (0 = ไม่จำกัด)
+create or replace function public.round_seats(t trainings) returns int
+language sql stable security definer set search_path = public as $$
+  select coalesce(t.seats, (select c.seats from courses c where c.id = t.course_id), 0)
+$$;
+
+-- รุ่นยังรับจองอยู่ไหม (งานเปิดจอง และยังไม่ถึงวันปิดรับ)
+create or replace function public.round_bookable(t trainings, c courses) returns boolean
+language sql stable as $$
+  select c.booking_open and coalesce((c.steps ->> 'booking')::boolean, false)
+     and (t.starts_at is null
+          or now() < (date_trunc('day', t.starts_at at time zone 'Asia/Bangkok')
+                      - make_interval(days => c.booking_close_days)) at time zone 'Asia/Bangkok'
+          or (c.booking_close_days = 0 and now() < t.starts_at))
+$$;
+
+-- ---------- ผู้เข้าอบรม (ไม่ต้องล็อกอิน) ----------
+-- หน้าจอง: ข้อมูลงาน + รุ่นที่ยังมีที่นั่ง
+create or replace function public.course_info(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses;
+begin
+  select * into c from courses where booking_code = trim(p_code);
+  if c.id is null then raise exception 'ไม่พบงานอบรมนี้ ตรวจสอบลิงก์อีกครั้ง'; end if;
+  return jsonb_build_object(
+    'id', c.id, 'title', c.title, 'cert_title', c.cert_title, 'location', c.location,
+    'booking_open', c.booking_open and coalesce((c.steps ->> 'booking')::boolean, false),
+    'roster', c.roster_source is not null,
+    'hospitals', coalesce(c.hospitals, public.list_hospitals()),
+    'departments', case when jsonb_typeof(c.departments) = 'array' then c.departments else public.list_departments() end,
+    'rounds', coalesce((select jsonb_agg(jsonb_build_object(
+        'id', t.id, 'label', coalesce(t.round_label, t.title), 'starts_at', t.starts_at, 'ends_at', t.ends_at,
+        'seats', public.round_seats(t),
+        'booked', (select count(*) from bookings b where b.training_id = t.id),
+        'open', public.round_bookable(t, c)) order by t.starts_at nulls last, t.round_no, t.created_at)
+      from trainings t where t.course_id = c.id), '[]'::jsonb));
+end $$;
+
+-- ค้นรหัสพนักงาน: ชื่อ/แผนกจากรายชื่อ + การจองที่มีอยู่
+create or replace function public.course_lookup(p_code text, p_emp text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses; k text := public.roster_norm(p_emp); r roster; b bookings; t trainings;
+begin
+  select * into c from courses where booking_code = trim(p_code);
+  if c.id is null or k = '' then return null; end if;
+  select * into b from bookings where course_id = c.id and emp_key = k;
+  if b.id is not null then select * into t from trainings where id = b.training_id; end if;
+  if c.roster_source is not null then
+    select * into r from roster where source = c.roster_source and emp_key = k;
+  end if;
+  return jsonb_build_object(
+    'found', r.emp_key is not null or b.id is not null,
+    'emp_id', coalesce(b.emp_id, r.emp_id), 'full_name', coalesce(b.full_name, r.full_name),
+    'dept', coalesce(b.department, r.dept), 'hospital', b.hospital,
+    'booking', case when b.id is not null then jsonb_build_object(
+        'training_id', b.training_id, 'label', coalesce(t.round_label, t.title), 'starts_at', t.starts_at) end);
+end $$;
+
+-- จอง / ย้ายรุ่น (ตรวจที่นั่งแบบล็อกแถว กันจองเกิน)
+create or replace function public.book_seat(
+  p_code text, p_training uuid, p_emp_id text, p_name text, p_dept text, p_hospital text default ''
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c courses; t trainings; k text := public.roster_norm(p_emp_id); v_seats int; v_n int; old bookings;
+begin
+  select * into c from courses where booking_code = trim(p_code);
+  if c.id is null then raise exception 'ไม่พบงานอบรมนี้'; end if;
+  select * into t from trainings where id = p_training and course_id = c.id for update;
+  if t.id is null then raise exception 'ไม่พบรุ่นที่เลือก'; end if;
+  if not public.round_bookable(t, c) then raise exception 'รุ่นนี้ปิดรับจองแล้ว'; end if;
+  if k = '' or trim(coalesce(p_name, '')) = '' or trim(coalesce(p_dept, '')) = '' then
+    raise exception 'กรุณากรอกรหัสพนักงาน ชื่อ และแผนก';
+  end if;
+  select * into old from bookings where course_id = c.id and emp_key = k;
+  if old.training_id = t.id then
+    return jsonb_build_object('ok', true, 'moved', false, 'label', coalesce(t.round_label, t.title));
+  end if;
+  v_seats := public.round_seats(t);
+  select count(*) into v_n from bookings where training_id = t.id;
+  if v_seats > 0 and v_n >= v_seats then raise exception 'รุ่นนี้เต็มแล้ว กรุณาเลือกรุ่นอื่น'; end if;
+  insert into bookings (course_id, training_id, emp_id, emp_key, full_name, department, hospital)
+  values (c.id, t.id, coalesce((select r.emp_id from roster r where r.source = c.roster_source and r.emp_key = k),
+                               left(upper(trim(p_emp_id)), 30)), k, left(trim(p_name), 150), left(trim(p_dept), 120), left(trim(coalesce(p_hospital, '')), 120))
+  on conflict (course_id, emp_key) do update
+     set training_id = excluded.training_id, full_name = excluded.full_name, department = excluded.department,
+         hospital = excluded.hospital, emp_id = excluded.emp_id, updated_at = now();
+  return jsonb_build_object('ok', true, 'moved', old.id is not null, 'label', coalesce(t.round_label, t.title));
+end $$;
+
+-- สถานะของคนหนึ่งในรุ่นนี้ (ใช้พาไปขั้นที่ถูกต้องจาก QR เดียว)
+create or replace function public.journey_status(p_code text, p_emp text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; c courses; k text := public.roster_norm(p_emp); b bookings; a attendance;
+        v_pre boolean; v_post boolean; v_pass boolean; v_sv boolean; bt trainings;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบรุ่นนี้ ตรวจสอบรหัสอีกครั้ง'; end if;
+  select * into c from courses where id = t.course_id;
+  if k = '' then return null; end if;
+  if c.id is not null then
+    select * into b from bookings where course_id = c.id and emp_key = k;
+    if b.id is not null then select * into bt from trainings where id = b.training_id; end if;
+  end if;
+  select * into a from attendance where training_id = t.id and emp_key = k;
+  select bool_or(phase = 'pre'), bool_or(phase = 'post'),
+         bool_or(phase = 'post' and score * 100 >= t.pass_percent * t.total)
+    into v_pre, v_post, v_pass
+    from test_submissions where training_id = t.id and public.roster_norm(emp_id) = k;
+  select exists (select 1 from survey_done d where d.training_id = t.id and public.roster_norm(d.emp_id) = k) into v_sv;
+  return jsonb_build_object(
+    'course', c.id is not null,
+    'steps', coalesce(c.steps, '{"pre":true,"post":true,"survey":true}'::jsonb),
+    'open', jsonb_build_object('checkin', t.checkin_open, 'pre', t.pre_open, 'post', t.post_open, 'finish', t.finish_open),
+    'pin', coalesce(c.finish_pin_enabled, false),
+    'booked', b.id is not null, 'booked_here', b.training_id = t.id,
+    'booked_label', coalesce(bt.round_label, bt.title),
+    'name', coalesce(a.full_name, b.full_name), 'dept', coalesce(a.department, b.department),
+    'hospital', coalesce(a.hospital, b.hospital), 'emp_id', coalesce(a.emp_id, b.emp_id),
+    'checkin', a.checkin_at is not null, 'pre', coalesce(v_pre, false), 'post', coalesce(v_post, false),
+    'passed', coalesce(v_pass, false), 'survey', v_sv, 'finish', a.finish_at is not null);
+end $$;
+
+-- ลงทะเบียนเข้า (ลายเซ็นอัปโหลดเข้า bucket ก่อน แล้วส่ง path มา)
+create or replace function public.check_in(
+  p_code text, p_emp_id text, p_name text, p_dept text, p_hospital text, p_sig text
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; c courses; k text := public.roster_norm(p_emp_id); v_walk boolean;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบรุ่นนี้'; end if;
+  if not t.checkin_open then raise exception 'ยังไม่เปิดลงทะเบียนเข้าอบรม'; end if;
+  if k = '' or trim(coalesce(p_name, '')) = '' or trim(coalesce(p_dept, '')) = '' then
+    raise exception 'กรุณากรอกรหัสพนักงาน ชื่อ และแผนก';
+  end if;
+  if coalesce(p_sig, '') !~ ('^' || t.id::text || '/[A-Za-z0-9_-]{1,80}\.png$') then
+    raise exception 'กรุณาเซ็นชื่อก่อนลงทะเบียน';
+  end if;
+  select * into c from courses where id = t.course_id;
+  v_walk := not exists (select 1 from bookings where training_id = t.id and emp_key = k);
+  insert into attendance (training_id, emp_id, emp_key, full_name, department, hospital, walk_in, checkin_at, checkin_sig)
+  values (t.id, coalesce((select b.emp_id from bookings b where b.course_id = c.id and b.emp_key = k),
+                         (select r.emp_id from roster r where r.source = c.roster_source and r.emp_key = k),
+                         left(upper(trim(p_emp_id)), 30)), k, left(trim(p_name), 150), left(trim(p_dept), 120),
+          left(trim(coalesce(p_hospital, '')), 120), v_walk, now(), p_sig)
+  on conflict (training_id, emp_key) do update
+     set checkin_at = coalesce(attendance.checkin_at, now()),
+         checkin_sig = coalesce(attendance.checkin_sig, excluded.checkin_sig),
+         full_name = excluded.full_name, department = excluded.department, hospital = excluded.hospital;
+  return jsonb_build_object('ok', true, 'walk_in', v_walk);
+end $$;
+
+-- ลงชื่อจบ (PIN ถ้างานเปิดใช้ · ต้องผ่าน Post-test ถ้างานมีขั้น Post)
+create or replace function public.finish_sign(p_code text, p_emp_id text, p_pin text, p_sig text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare t trainings; c courses; k text := public.roster_norm(p_emp_id); a attendance; b bookings;
+begin
+  select * into t from trainings where code = trim(p_code);
+  if t.id is null then raise exception 'ไม่พบรุ่นนี้'; end if;
+  if not t.finish_open then raise exception 'ยังไม่เปิดลงชื่อจบการอบรม'; end if;
+  select * into c from courses where id = t.course_id;
+  if coalesce(c.finish_pin_enabled, false) and c.finish_pin <> '' and trim(coalesce(p_pin, '')) <> c.finish_pin then
+    raise exception 'PIN ไม่ถูกต้อง';
+  end if;
+  if coalesce(p_sig, '') !~ ('^' || t.id::text || '/[A-Za-z0-9_-]{1,80}\.png$') then
+    raise exception 'กรุณาเซ็นชื่อก่อนส่ง';
+  end if;
+  if coalesce((c.steps ->> 'post')::boolean, true) and not exists (
+       select 1 from test_submissions s where s.training_id = t.id and s.phase = 'post'
+          and public.roster_norm(s.emp_id) = k and s.score * 100 >= t.pass_percent * t.total) then
+    raise exception 'ต้องสอบ Post-test ผ่านก่อนจึงลงชื่อจบได้';
+  end if;
+  select * into a from attendance where training_id = t.id and emp_key = k;
+  if a.id is null then
+    -- ไม่ได้ลงทะเบียนเข้าผ่านระบบ: สร้างแถวจากการจอง / ผลสอบ
+    select * into b from bookings where training_id = t.id and emp_key = k;
+    insert into attendance (training_id, emp_id, emp_key, full_name, department, hospital, walk_in)
+    select t.id, coalesce(b.emp_id, s.emp_id), k, coalesce(b.full_name, s.full_name), coalesce(b.department, s.department),
+           coalesce(b.hospital, s.hospital, ''), b.id is null
+      from (select 1) x
+      left join lateral (select * from test_submissions s where s.training_id = t.id and public.roster_norm(s.emp_id) = k
+                          order by s.submitted_at desc limit 1) s on true
+    returning * into a;
+    if a.full_name is null then raise exception 'ไม่พบชื่อของรหัสนี้ในรุ่นนี้'; end if;
+  end if;
+  update attendance set finish_at = coalesce(finish_at, now()), finish_sig = coalesce(finish_sig, p_sig)
+   where id = a.id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke execute on function public.course_info(text), public.course_lookup(text, text),
+  public.book_seat(text, uuid, text, text, text, text), public.journey_status(text, text),
+  public.check_in(text, text, text, text, text, text), public.finish_sign(text, text, text, text) from public;
+grant execute on function public.course_info(text), public.course_lookup(text, text),
+  public.book_seat(text, uuid, text, text, text, text), public.journey_status(text, text),
+  public.check_in(text, text, text, text, text, text), public.finish_sign(text, text, text, text) to anon, authenticated;
+
+-- ---------- ผู้จัด ----------
+-- ภาพรวมงาน: ตัวเลขทุกขั้นแยกรุ่น
+create or replace function public.course_summary(p_course uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์ดูงานนี้'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object(
+      'id', t.id, 'code', t.code, 'label', coalesce(t.round_label, t.title), 'round_no', t.round_no,
+      'starts_at', t.starts_at, 'seats', public.round_seats(t),
+      'open', jsonb_build_object('checkin', t.checkin_open, 'pre', t.pre_open, 'post', t.post_open, 'finish', t.finish_open),
+      'booked',  (select count(*) from bookings b where b.training_id = t.id),
+      'checkin', (select count(*) from attendance a where a.training_id = t.id and a.checkin_at is not null),
+      'walk_in', (select count(*) from attendance a where a.training_id = t.id and a.walk_in and a.checkin_at is not null),
+      'pre',     (select count(distinct public.roster_norm(emp_id)) from test_submissions s where s.training_id = t.id and s.phase = 'pre'),
+      'passed',  (select count(distinct public.roster_norm(emp_id)) from test_submissions s where s.training_id = t.id and s.phase = 'post'
+                    and s.score * 100 >= t.pass_percent * t.total),
+      'survey',  (select count(*) from survey_done d where d.training_id = t.id),
+      'finish',  (select count(*) from attendance a where a.training_id = t.id and a.finish_at is not null))
+    order by t.starts_at nulls last, t.round_no, t.created_at)
+    from trainings t where t.course_id = p_course), '[]'::jsonb);
+end $$;
+revoke execute on function public.course_summary(uuid) from public, anon;
+grant execute on function public.course_summary(uuid) to authenticated;
+
+-- ผู้จัดของงาน (เจ้าของ/ผู้จัดร่วมของงาน) เห็นและเปิด-ปิดทุกรุ่นในงานได้
+drop policy if exists trainings_owner on public.trainings;
+create policy trainings_owner on public.trainings for select to authenticated
+  using (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts)
+         or (course_id is not null and public.can_manage_course(course_id)));
+drop policy if exists trainings_owner_upd on public.trainings;
+create policy trainings_owner_upd on public.trainings for update to authenticated
+  using (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts)
+         or (course_id is not null and public.can_manage_course(course_id)))
+  with check (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts)
+         or (course_id is not null and public.can_manage_course(course_id)));
