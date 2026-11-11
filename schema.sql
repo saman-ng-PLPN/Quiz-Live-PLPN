@@ -2062,7 +2062,7 @@ begin
   select * into r from roster where source = t.roster and emp_key = public.roster_norm(p_emp);
   if r.emp_key is null then return jsonb_build_object('found', false); end if;
   v_label := coalesce(t.round_label, t.title);
-  return jsonb_build_object('found', true, 'full_name', r.full_name, 'dept', r.dept,
+  return jsonb_build_object('found', true, 'emp_id', r.emp_id, 'full_name', r.full_name, 'dept', r.dept,
     'slot', r.slot, 'slot_text', r.slot_text,
     'this_round', r.slot = '' or position(r.slot in v_label) > 0);
 end $$;

@@ -1908,6 +1908,8 @@ const Test = {
         if (emp.value.trim() !== v) return;
         if (!r || !r.found) { rbox.className = 'hint'; rbox.textContent = 'ไม่พบในรายชื่อผู้จอง · กรอกชื่อและแผนกเองได้'; return; }
         this.hit = r;
+        // ใช้รหัสพนักงานตามรายชื่อผู้จอง (เช่น พิมพ์ 13553 → 013553) ผล Pre/Post จะได้จับคู่กันถูก
+        if (r.emp_id && r.emp_id !== v) { emp.value = r.emp_id; last = r.emp_id; }
         if (r.full_name) $('#t-name').value = noPrefix(r.full_name);
         if (r.dept) {
           if (sel.tagName === 'SELECT') {
