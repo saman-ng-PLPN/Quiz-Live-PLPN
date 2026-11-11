@@ -485,7 +485,7 @@ const APP = CFG.APP_NAME || 'Quiz Live';
 const LETTERS = ['ก', 'ข', 'ค', 'ง'];
 const isText = q => !!q && q.kind === 'text';
 // ตัดคำนำหน้าชื่อ (นาย/นาง/นางสาว/น.ส.) และช่องว่างซ้ำ — ชื่อในรายงานจะได้รูปแบบเดียวกัน
-const noPrefix = n => String(n || '').trim().replace(/^(นางสาว|นาง|นาย|น\.ส\.)\s*(?=[ก-ฮ])/, '').replace(/\s+/g, ' ');   // ข้อเขียน (ไม่คิดคะแนน)
+const noPrefix = n => String(n || '').trim().replace(/^(นางสาว|นาง|นาย|น\.ส\.)\s*(?=[ก-ฮเแโใไ])/, '').replace(/\s+/g, ' ');   // ข้อเขียน (ไม่คิดคะแนน)
 const TIMES = [10, 15, 20, 30, 45, 60, 90, 120];
 const DEF_COLORS = ['#e44d57', '#2c7bd6', '#ec9a26', '#2a9d63'];
 const PALETTES = [
