@@ -483,7 +483,9 @@ body.stage{background:radial-gradient(1200px 700px at 85% -10%, #21506f 0%, tran
 const CFG = window.QUIZ_CONFIG || {};
 const APP = CFG.APP_NAME || 'Quiz Live';
 const LETTERS = ['ก', 'ข', 'ค', 'ง'];
-const isText = q => !!q && q.kind === 'text';   // ข้อเขียน (ไม่คิดคะแนน)
+const isText = q => !!q && q.kind === 'text';
+// ตัดคำนำหน้าชื่อ (นาย/นาง/นางสาว/น.ส.) และช่องว่างซ้ำ — ชื่อในรายงานจะได้รูปแบบเดียวกัน
+const noPrefix = n => String(n || '').trim().replace(/^(นางสาว|นาง|นาย|น\.ส\.)\s*(?=[ก-ฮ])/, '').replace(/\s+/g, ' ');   // ข้อเขียน (ไม่คิดคะแนน)
 const TIMES = [10, 15, 20, 30, 45, 60, 90, 120];
 const DEF_COLORS = ['#e44d57', '#2c7bd6', '#ec9a26', '#2a9d63'];
 const PALETTES = [
@@ -671,7 +673,7 @@ const Player = {
       const me = load('quizlive.tester') || {}, depts = info.departments || [], hosps = info.hospitals || [];
       box.innerHTML = `<div class="prenote">📝 <b>${esc(info.title)}</b><br>เกมนี้เป็น <b>Pre-test</b> ผลบันทึกด้วยรหัสพนักงาน · ระหว่างเกมไม่เฉลยข้อที่ถูก</div>
         <div class="fld"><label for="j-emp">รหัสพนักงาน *</label><input class="inp" id="j-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters"></div>
-        <div class="fld"><label for="j-name">ชื่อ-นามสกุล *</label><input class="inp" id="j-name" maxlength="120" value="${esc(me.name || '')}"></div>
+        <div class="fld"><label for="j-name">ชื่อ-นามสกุล * <small class="hint">(ไม่ต้องใส่คำนำหน้า)</small></label><input class="inp" id="j-name" maxlength="120" placeholder="เช่น สมชาย ใจดี" value="${esc(me.name || '')}"></div>
         ${hosps.length ? `<div class="fld"><label>โรงพยาบาล *</label><div class="seg">${hosps.map(h =>
           `<label><input type="radio" name="jhosp" value="${esc(h)}" ${h === me.hospital || hosps.length === 1 ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div>` : ''}
         <div class="fld"><label for="j-dept">แผนก *</label>${depts.length
@@ -694,7 +696,7 @@ const Player = {
       let who = null;
       if (pre) {
         const sel = $('#j-dept'), other = $('#j-dept-other'), h = $('input[name=jhosp]:checked');
-        who = { emp_id: $('#j-emp').value.trim().toUpperCase(), name: $('#j-name').value.trim(),
+        who = { emp_id: $('#j-emp').value.trim().toUpperCase(), name: noPrefix($('#j-name').value),
                 dept: sel.value === '__other' ? other.value.trim() : sel.value.trim(), hospital: h ? h.value : '' };
         if (!who.emp_id || !who.name || !who.dept || ((info.hospitals || []).length && !who.hospital)) return toast('กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *', true);
       } else if (!nickEl.value.trim()) return toast('กรุณาใส่ชื่อ', true);
@@ -1882,7 +1884,7 @@ const Test = {
           ${i[ph + '_open'] ? '' : 'disabled'}>${ph === 'pre' ? 'Pre-test<br><small>ก่อนอบรม</small>' : 'Post-test<br><small>หลังอบรม</small>'}</label>`).join('')}</div>
         <div class="fld"><label for="t-emp">รหัสพนักงาน *</label><input class="inp" id="t-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters" inputmode="text">
           ${i.roster ? '<div id="rbox" class="hint" style="margin:4px 0 0">ใส่รหัสพนักงาน ระบบจะดึงชื่อและแผนกจากรายชื่อผู้จองอบรมให้</div>' : ''}</div>
-        <div class="fld"><label for="t-name">ชื่อ-นามสกุล *</label><input class="inp" id="t-name" maxlength="120" value="${esc(me.name || '')}"></div>
+        <div class="fld"><label for="t-name">ชื่อ-นามสกุล * <small class="hint">(ไม่ต้องใส่คำนำหน้า)</small></label><input class="inp" id="t-name" maxlength="120" placeholder="เช่น สมชาย ใจดี" value="${esc(me.name || '')}"></div>
         ${hosps.length ? `<div class="fld"><label>โรงพยาบาล *</label><div class="seg">${hosps.map(h =>
           `<label><input type="radio" name="hosp" value="${esc(h)}" ${h === me.hospital || hosps.length === 1 ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div>` : ''}
         <div class="fld"><label for="t-dept">แผนก *</label>${depts.length
@@ -1906,7 +1908,7 @@ const Test = {
         if (emp.value.trim() !== v) return;
         if (!r || !r.found) { rbox.className = 'hint'; rbox.textContent = 'ไม่พบในรายชื่อผู้จอง · กรอกชื่อและแผนกเองได้'; return; }
         this.hit = r;
-        if (r.full_name) $('#t-name').value = r.full_name;
+        if (r.full_name) $('#t-name').value = noPrefix(r.full_name);
         if (r.dept) {
           if (sel.tagName === 'SELECT') {
             if ([...sel.options].some(o => o.value === r.dept)) { sel.value = r.dept; if (other) other.hidden = true; }
@@ -1927,7 +1929,7 @@ const Test = {
           && !confirm(`ท่านจองไว้รอบ ${this.hit.slot_text || this.hit.slot}\nไม่ใช่รุ่นนี้ ต้องการทำแบบทดสอบของรุ่นนี้ต่อหรือไม่?`)) return;
       const dept = sel.value === '__other' ? other.value.trim() : sel.value.trim();
       const h = $('input[name=hosp]:checked');
-      const who = { emp_id: $('#t-emp').value.trim().toUpperCase(), name: $('#t-name').value.trim(), dept, hospital: h ? h.value : '' };
+      const who = { emp_id: $('#t-emp').value.trim().toUpperCase(), name: noPrefix($('#t-name').value), dept, hospital: h ? h.value : '' };
       if (!who.emp_id || !who.name || !who.dept || (hosps.length && !who.hospital)) return toast('กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *', true);
       save('quizlive.tester', { ...me, ...who });
       this.who = who; this.phase = $('input[name=ph]:checked').value;
