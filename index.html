@@ -491,7 +491,8 @@ body.admin .savebar{background:rgba(244,247,251,.94)}
 /* v14 หน้าแรก/งานอบรม */
 .secnav{display:flex;gap:4px;align-items:center;border-bottom:2px solid var(--line);flex-wrap:wrap}
 .secnav button{border:0;background:none;padding:10px 16px;font-size:17px;font-weight:500;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px}
-.secnav button.on{color:var(--ink);font-weight:600;border-bottom-color:#2563eb}
+.secnav button.on,.secnav a.on{color:var(--ink);font-weight:600;border-bottom-color:#2563eb}
+.secnav a{padding:10px 16px;font-size:15px;font-weight:500;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;text-decoration:none}
 .secnav.sm{margin-top:14px}.secnav.sm button{font-size:15px}
 .secnav .btn{margin-bottom:8px}
 .cnt{font-size:12px;background:#e6edf7;color:#1e40af;border-radius:99px;padding:1px 8px;font-weight:600}
@@ -2820,7 +2821,7 @@ const Course = {
       <div id="cbody"></div>`);
     bindShell();
     $$('[data-ctab]').forEach(b => b.onclick = () => {
-      if (b.dataset.ctab === 'report') { location.hash = '#report/ids=' + this.rows.map(r => r.id).join(','); return; }
+      if (b.dataset.ctab === 'report') { location.hash = '#report/c=' + c.id; return; }
       this.tab = b.dataset.ctab; history.replaceState(null, '', '#course/' + c.id + ':' + this.tab); this.render(); });
     this.renderBody();
   },
@@ -3022,13 +3023,16 @@ const Report = {
     app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`); bindShell();
     const adm = await sb.rpc('is_admin'); this.isAdmin = adm.data === true;
     const { data, error } = await sb.from('trainings')
-      .select('id,title,code,series,series_id,round_label,round_no,pass_percent,pre_open,post_open,questions,total,survey_id,created_at,owner_id,owner_email')
+      .select('id,title,code,series,series_id,course_id,round_label,round_no,pass_percent,pre_open,post_open,questions,total,survey_id,created_at,owner_id,owner_email')
       .order('created_at', { ascending: false }).limit(300);
     if (error) { toast(errMsg(error), true); return; }
     this.all = data || [];
     arg = decodeURIComponent(arg || '');
     let ids = [];
     if (arg.startsWith('s=')) ids = this.all.filter(t => t.series_id === arg.slice(2)).map(t => t.id);
+    else if (arg.startsWith('c=')) ids = this.all.filter(t => t.course_id === arg.slice(2)).map(t => t.id);
+    this.course = null;
+    if (arg.startsWith('c=')) { const cr = await sb.from('courses').select('id,title').eq('id', arg.slice(2)).maybeSingle(); this.course = cr.data || null; }
     else if (arg.startsWith('ids=')) ids = arg.slice(4).split(',');
     this.sel = new Set(ids.filter(id => this.all.some(t => t.id === id)));
     this.view = ''; this.tab = 'sum'; this.q = '';
@@ -3037,6 +3041,9 @@ const Report = {
     onLeave(() => clearInterval(poll));
   },
   chosen() { return sortRounds(this.all.filter(t => this.sel.has(t.id))); },
+  // ย้อนกลับ: ทุกรุ่นที่เลือกอยู่ในงานอบรมเดียวกัน → หน้างานอบรม (แท็บรุ่น) · ไม่งั้นหน้าหลัก
+  backHref() { const c = this.chosen(), cid = c[0] && c[0].course_id;
+    return cid && c.every(t => t.course_id === cid) ? '#course/' + cid : '#admin'; },
   // เลือกครบทุกรุ่นของชุดเดียว → แสดงปุ่มลบทั้งชุด
   wholeSeries() { const c = this.chosen(), sid = c[0] && c[0].series_id;
     return sid && c.every(t => t.series_id === sid) && this.all.filter(t => t.series_id === sid).length === c.length ? sid : null; },
@@ -3093,9 +3100,13 @@ const Report = {
     const title = !c.length ? 'รายงานรวมหลายรอบ' : series.length === 1 ? series[0] : `${c.length} รอบ`;
     if (this.view && !c.some(t => t.id === this.view)) this.view = '';
     app.innerHTML = adminShell(this.user, `
-      <div class="row"><a class="btn light sm" href="#admin">← กลับ</a><h2 class="sec grow">📊 ${esc(title)}</h2>
-        ${c.length ? `<button class="btn light sm" id="xls">⬇ ส่งออก Excel</button>` : ''}</div>
-      <details class="tcard" id="pick" ${c.length ? '' : 'open'}><summary style="cursor:pointer;font-weight:600">เลือกรอบที่จะรวม · เลือกแล้ว ${c.length} รอบ</summary>
+      ${this.course ? `<div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a><h2 class="sec grow">${esc(this.course.title)}</h2>
+          ${c.length ? `<button class="btn light sm" id="xls">⬇ ส่งออก Excel</button>` : ''}</div>
+        <nav class="secnav sm" aria-label="ส่วนของงานอบรม"><a href="#course/${this.course.id}">รุ่น <span class="cnt">${c.length}</span></a>
+          <a class="on" href="#report/c=${this.course.id}" aria-current="page">รายงานรวม</a><a href="#course/${this.course.id}:settings">ตั้งค่า</a></nav>`
+      : `<div class="row"><a class="btn light sm" href="${this.backHref()}">← ${this.backHref() === '#admin' ? 'กลับ' : 'ทุกรุ่น'}</a><h2 class="sec grow">📊 ${esc(title)}</h2>
+        ${c.length ? `<button class="btn light sm" id="xls">⬇ ส่งออก Excel</button>` : ''}</div>`}
+      <details class="tcard" id="pick" ${c.length ? '' : 'open'} ${this.course ? 'hidden' : ''}><summary style="cursor:pointer;font-weight:600">เลือกรอบที่จะรวม · เลือกแล้ว ${c.length} รอบ</summary>
         <div style="display:grid;gap:12px;max-height:420px;overflow:auto">${this.pickerHTML()}</div>
         <div class="row"><span class="grow"></span><button class="btn sm" id="apply" type="button">ใช้รอบที่เลือก</button></div></details>
       ${c.length ? `<div class="row" style="margin-top:14px">
@@ -3103,7 +3114,7 @@ const Report = {
           `<option value="${t.id}" ${t.id === this.view ? 'selected' : ''}>${esc(roundName(t))}</option>`).join('')}</select>
         <div class="tabs" id="tabs"></div></div>
       <div id="tbody" style="margin-top:12px"></div>` : '<div class="empty">เลือกรอบที่ต้องการรวมรายงานด้านบน</div>'}
-      ${this.wholeSeries() && (this.isAdmin || c.every(t => t.owner_id === this.user.id)) ? `<div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="delseries">🗑 ลบทั้งชุด (${c.length} รุ่น)</button></div>` : ''}`);
+      ${!this.course && this.wholeSeries() && (this.isAdmin || c.every(t => t.owner_id === this.user.id)) ? `<div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="delseries">🗑 ลบทั้งชุด (${c.length} รุ่น)</button></div>` : ''}`);
     bindShell();
     $('#pick').onchange = e => {
       const s = e.target.dataset.s, id = e.target.dataset.t;
