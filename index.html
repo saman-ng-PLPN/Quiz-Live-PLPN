@@ -530,7 +530,7 @@ img.sigimg{height:30px;max-width:110px;object-fit:contain;background:#fff;border
 .ropt small{display:block;color:var(--muted);font-size:13px}
 .ropt em{font-style:normal;font-size:13px;font-weight:600;color:#1b6b42;white-space:nowrap}
 .ropt input{width:20px;height:20px;accent-color:#2563eb;flex-shrink:0}
-canvas.sigpad{width:100%;height:180px;border:2px dashed #93c5fd;border-radius:14px;background:#fff;touch-action:none;display:block}
+canvas.sigpad{width:100%;height:180px;border:2px dashed #93c5fd;border-radius:14px;background:#fff;touch-action:none;display:block;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 </style>
 </head>
 <body>
@@ -3089,6 +3089,8 @@ function sigPad(canvas) {
   const dot = p => { g.beginPath(); g.arc(p[0], p[1], 1.1, 0, 7); g.fill(); };
   canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
+    // iOS: แป้นพิมพ์ค้างจากช่องชื่อ → ปิดก่อน หน้าจะได้ไม่ขยับระหว่างเซ็น
+    if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur();
     if (e.pointerType === 'pen') { pen = true; if (active !== null && pts.get(active) && pts.get(active).type === 'touch') active = null; }
     if (ignore(e)) return;
     try { canvas.setPointerCapture(e.pointerId); } catch (er) {}
@@ -3111,9 +3113,22 @@ function sigPad(canvas) {
   });
   const end = e => { pts.delete(e.pointerId); if (e.pointerId === active) active = null; };
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(n => canvas.addEventListener(n, end));
-  // กัน iOS เลื่อนหน้า/ซูมระหว่างเซ็น
-  ['touchstart', 'touchmove'].forEach(n => canvas.addEventListener(n, e => e.preventDefault(), { passive: false }));
-  fit();
+  // กัน iOS เลื่อนหน้า/ซูม/แว่นขยาย/เมนูคัดลอกระหว่างเซ็น
+  ['touchstart', 'touchmove', 'touchend', 'gesturestart'].forEach(n => canvas.addEventListener(n, e => e.preventDefault(), { passive: false }));
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  // หมุนจอ / แป้นพิมพ์เปลี่ยนขนาด → ปรับขนาดกรอบโดยไม่ลบลายเซ็นที่เซ็นไว้
+  let rw = 0;
+  const refit = () => {
+    const r = canvas.getBoundingClientRect(); if (!r.width || Math.abs(r.width - rw) < 2) return; rw = r.width;
+    if (!strokes) return fit();
+    const tmp = document.createElement('canvas'); tmp.width = canvas.width; tmp.height = canvas.height; tmp.getContext('2d').drawImage(canvas, 0, 0);
+    const keep = strokes; fit(); const d = window.devicePixelRatio || 1;
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(tmp, 0, 0, canvas.width, canvas.height); g.restore(); g.setTransform(d, 0, 0, d, 0, 0); strokes = keep;
+  };
+  const onRs = () => setTimeout(refit, 120);
+  window.addEventListener('resize', onRs);
+  onLeave(() => window.removeEventListener('resize', onRs));
+  fit(); rw = canvas.getBoundingClientRect().width;
   return {
     clear: fit, empty: () => strokes < 8,
     blob: () => new Promise((res, rej) => {
