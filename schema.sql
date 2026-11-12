@@ -2636,3 +2636,72 @@ begin
 end $$;
 revoke execute on function public.course_summary(uuid) from public, anon;
 grant execute on function public.course_summary(uuid) to authenticated;
+
+-- =====================================================================
+-- 19) v14.3: รายชื่อผู้เข้าร่วมของแต่ละงาน (อัปโหลดจากไฟล์) + แผนกของงานเอง
+--     - roster.source = 'course:<id>' · ผู้จัดของงานอัปโหลดทับได้ (ไม่ลบการจอง/ลงชื่อ/ผลสอบ)
+--     - courses.departments = รายชื่อแผนกของงานนี้ (null = ใช้รายชื่อหลักเหมือนเดิม)
+-- =====================================================================
+alter table public.roster add column if not exists hospital text not null default '';
+
+create or replace function public.set_course_roster(p_course uuid, p_rows jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare c courses; v_src text; v_n int;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  if jsonb_typeof(p_rows) <> 'array' then raise exception 'รูปแบบรายชื่อไม่ถูกต้อง'; end if;
+  if jsonb_array_length(p_rows) > 20000 then raise exception 'รายชื่อเกิน 20,000 คน'; end if;
+  select * into c from courses where id = p_course;
+  v_src := 'course:' || c.id;
+  delete from roster where source = v_src;
+  insert into roster (source, emp_key, emp_id, full_name, dept, hospital, slot, slot_text)
+  select distinct on (public.roster_norm(x ->> 'emp_id'))
+         v_src, public.roster_norm(x ->> 'emp_id'), left(upper(trim(x ->> 'emp_id')), 30),
+         left(trim(coalesce(x ->> 'name', '')), 150), left(trim(coalesce(x ->> 'dept', '')), 120),
+         left(trim(coalesce(x ->> 'hospital', '')), 120), '', ''
+    from jsonb_array_elements(p_rows) x
+   where public.roster_norm(x ->> 'emp_id') <> '';
+  get diagnostics v_n = row_count;
+  update courses set roster_source = v_src where id = c.id;
+  update trainings set roster = v_src where course_id = c.id;
+  return public.course_roster_stats(p_course);
+end $$;
+
+create or replace function public.course_roster_stats(p_course uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses;
+begin
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์ดูงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  return jsonb_build_object(
+    'source', c.roster_source,
+    'count', (select count(*) from roster where source = c.roster_source),
+    'depts', coalesce((select jsonb_agg(d order by d) from (select distinct dept d from roster where source = c.roster_source and dept <> '') x), '[]'::jsonb),
+    'updated_at', (select max(updated_at) from roster where source = c.roster_source));
+end $$;
+
+revoke execute on function public.set_course_roster(uuid, jsonb), public.course_roster_stats(uuid) from public, anon;
+grant execute on function public.set_course_roster(uuid, jsonb), public.course_roster_stats(uuid) to authenticated;
+
+-- ค้นรหัส: คืนโรงพยาบาลจากรายชื่อด้วย (ถ้ามี)
+create or replace function public.course_lookup(p_code text, p_emp text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses; k text := public.roster_norm(p_emp); r roster; b bookings; t trainings;
+begin
+  select * into c from courses where booking_code = trim(p_code);
+  if c.id is null or k = '' then return null; end if;
+  select * into b from bookings where course_id = c.id and emp_key = k;
+  if b.id is not null then select * into t from trainings where id = b.training_id; end if;
+  if c.roster_source is not null then
+    select * into r from roster where source = c.roster_source and emp_key = k;
+  end if;
+  return jsonb_build_object(
+    'found', r.emp_key is not null or b.id is not null,
+    'emp_id', coalesce(b.emp_id, r.emp_id), 'full_name', coalesce(b.full_name, r.full_name),
+    'dept', coalesce(b.department, r.dept), 'hospital', coalesce(nullif(b.hospital, ''), nullif(r.hospital, '')),
+    'booking', case when b.id is not null then jsonb_build_object(
+        'training_id', b.training_id, 'label', coalesce(t.round_label, t.title), 'starts_at', t.starts_at) end);
+end $$;
+revoke execute on function public.course_lookup(text, text) from public;
+grant execute on function public.course_lookup(text, text) to anon, authenticated;
