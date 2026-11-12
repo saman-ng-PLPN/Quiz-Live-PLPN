@@ -531,6 +531,13 @@ img.sigimg{height:30px;max-width:110px;object-fit:contain;background:#fff;border
 .ropt em{font-style:normal;font-size:13px;font-weight:600;color:#1b6b42;white-space:nowrap}
 .ropt input{width:20px;height:20px;accent-color:#2563eb;flex-shrink:0}
 canvas.sigpad{width:100%;height:180px;border:2px dashed #93c5fd;border-radius:14px;background:#fff;touch-action:none;display:block;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.stepn{width:26px;height:26px;border-radius:50%;background:#1e3a8a;color:#fff;display:inline-grid;place-items:center;font-size:13px;margin-right:8px;vertical-align:middle}
+.imgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;align-items:center}
+.drop{border:2px dashed #bfdbfe;background:#eff6ff;border-radius:12px;padding:22px;text-align:center;display:grid;gap:4px;cursor:pointer}
+.drop.on{border-color:#2563eb;background:#dbeafe}
+.issues{display:grid;gap:6px;font-size:14px}
+.phase.bad{background:#fde2e2;color:#b4373e}
+.rosterbox{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}
 </style>
 </head>
 <body>
@@ -2852,6 +2859,14 @@ const Course = {
   },
   renderBody() {
     const box = $('#cbody'); if (!box) return;
+    if (!this.c.id) {
+      box.innerHTML = `<nav class="secnav sm" aria-label="วิธีสร้าง"><button data-nmode="manual" class="${this.nmode !== 'import' ? 'on' : ''}">กรอกเอง</button>
+        <button data-nmode="import" class="${this.nmode === 'import' ? 'on' : ''}">อัปโหลดจากไฟล์</button></nav><div id="nbody"></div>`;
+      $$('[data-nmode]', box).forEach(b => b.onclick = () => { this.nmode = b.dataset.nmode; this.renderBody(); });
+      const nb = $('#nbody');
+      if (this.nmode === 'import') { nb.innerHTML = CourseImport.html(); CourseImport.bind(this); return; }
+      return this.renderSettings(nb);
+    }
     if (this.tab === 'settings') return this.renderSettings(box);
     if (this.tab === 'attend') return this.renderAttend(box);
     const c = this.c, rows = this.rows;
@@ -3012,13 +3027,17 @@ const Course = {
         <section class="tcard"><h3>โรงพยาบาลและแผนก</h3>
           <div class="row" style="gap:16px">${this.hospitals.map(h => `<label class="switch"><input type="checkbox" data-hosp="${esc(h)}" ${hs.includes(h) ? 'checked' : ''}> ${esc(h)}</label>`).join('')
             || '<span class="hint">ยังไม่มีรายชื่อโรงพยาบาล (ผู้ดูแลระบบเพิ่มได้)</span>'}</div>
-          <div class="fld"><label for="c-dall">แผนกที่ให้เลือก</label><select class="inp" id="c-dall">
-            <option value="all" ${ds ? '' : 'selected'}>ทุกแผนกในรายชื่อหลัก (${this.depts.length})</option>
-            <option value="some" ${ds ? 'selected' : ''}>เลือกเฉพาะบางแผนก${ds ? ` (${ds.length})` : ''}</option></select></div>
-          <div id="c-dbox" class="dbox" ${ds ? '' : 'hidden'}>${this.depts.map(d => `<label><input type="checkbox" data-dept="${esc(d)}" ${!ds || ds.includes(d) ? 'checked' : ''}> ${esc(d)}</label>`).join('')}</div>
-          <div class="fld"><label for="c-roster">รายชื่อผู้จอง / พนักงาน (ใส่รหัสแล้วเติมชื่อ-แผนกให้)</label>
-            <select class="inp" id="c-roster"><option value="">— ไม่ใช้ —</option>${[...new Set(['codegray', c.roster_source].filter(Boolean))].map(s =>
-              `<option value="${esc(s)}" ${s === c.roster_source ? 'selected' : ''}>${esc(s === 'codegray' ? 'Code Gray (จาก Google Sheet ระบบจองเดิม)' : s)}</option>`).join('')}</select></div>
+          <div class="fld"><label for="c-depts">แผนกของงานนี้ <small class="hint">(บรรทัดละ 1 แผนก · ใช้เฉพาะงานนี้)</small></label>
+            <textarea class="inp" id="c-depts" rows="7" placeholder="ว่าง = ใช้รายชื่อแผนกหลักของระบบ (${this.depts.length} แผนก)">${esc((ds || []).join('\n'))}</textarea>
+            <div class="row"><span class="hint grow" id="c-dcount"></span>
+              ${c.id ? '<button class="btn light sm" id="c-dfrom" type="button">ดึงจากรายชื่อผู้เข้าร่วม</button>' : ''}
+              <button class="btn light sm" id="c-dmaster" type="button">คัดลอกรายชื่อหลัก</button></div>
+            <p class="hint">ผู้เข้าร่วมเลือกแผนกจากรายการนี้ หรือเลือก “อื่นๆ” แล้วพิมพ์เองได้</p></div>
+          <div class="fld"><label>รายชื่อผู้เข้าร่วม (ใส่รหัสแล้วเติมชื่อ-แผนกให้)</label>
+            <div class="rosterbox"><span class="grow" id="c-rinfo">${c.roster_source ? 'กำลังโหลด…' : 'ยังไม่มีรายชื่อ · ผู้เข้าร่วมกรอกชื่อ-แผนกเอง'}</span>
+              ${c.id ? `<label class="btn light sm">⬆ อัปโหลดรายชื่อ<input type="file" id="c-rfile" accept=".xlsx,.xls,.csv" hidden></label>` : ''}</div>
+            ${c.id ? '' : '<p class="hint">อัปโหลดรายชื่อได้หลังสร้างงาน หรือใช้แท็บ “อัปโหลดจากไฟล์”</p>'}
+            ${c.roster_source && !/^course:/.test(c.roster_source) ? `<p class="hint">ใช้รายชื่อจากระบบเดิม (${esc(c.roster_source === 'codegray' ? 'Code Gray · Google Sheet ระบบจอง' : c.roster_source)}) · อัปโหลดใหม่จะแทนที่</p>` : ''}</div>
         </section>
         <section class="tcard"><h3>ผู้จัดร่วม</h3>
           <p class="hint">เปิด-ปิดขั้นตอน ดูผล และพิมพ์ใบลงชื่อได้ทุกรุ่น${own ? '' : ' · แก้รายชื่อได้เฉพาะเจ้าของงาน'}</p>
@@ -3028,7 +3047,26 @@ const Course = {
       <div class="savebar"><div class="in">${c.id && own ? '<button class="btn danger" id="c-del">ลบงานอบรม</button>' : ''}<span class="grow"></span>
         <label class="switch hint" ${c.id ? '' : 'hidden'}><input type="checkbox" id="c-apply" checked> ใช้กับทุกรุ่นในงานนี้ด้วย</label>
         <button class="btn sun" id="c-save">${c.id ? 'บันทึกการตั้งค่า' : 'สร้างงานอบรม'}</button></div></div>`;
-    $('#c-dall').onchange = e => { $('#c-dbox').hidden = e.target.value === 'all'; };
+    const dl = $('#c-depts'), dcount = () => { const n = dl.value.split('\n').filter(x => x.trim()).length; $('#c-dcount').textContent = n ? `${n} แผนก` : `ใช้รายชื่อหลัก ${this.depts.length} แผนก`; };
+    dl.oninput = dcount; dcount();
+    $('#c-dmaster').onclick = () => { const cur = dl.value.split('\n').map(x => x.trim()).filter(Boolean); dl.value = [...new Set([...cur, ...this.depts])].join('\n'); dcount(); };
+    const rinfo = st => { const el = $('#c-rinfo'); if (el && st) el.innerHTML = st.count ? `<b>${st.count}</b> คน · ${st.depts.length} แผนก${st.updated_at ? ` · อัปเดต ${esc(thDate(st.updated_at, { year: '2-digit' }))} ${esc(thTime(st.updated_at))}` : ''}` : 'ยังไม่มีรายชื่อ · ผู้เข้าร่วมกรอกชื่อ-แผนกเอง'; };
+    if (c.id && c.roster_source) rpc('course_roster_stats', { p_course: c.id }).then(st => { this.rstat = st; rinfo(st); }).catch(() => {});
+    if ($('#c-dfrom')) $('#c-dfrom').onclick = async () => {
+      try { const st = this.rstat || await rpc('course_roster_stats', { p_course: c.id });
+        if (!st.depts.length) return toast('ยังไม่มีแผนกในรายชื่อผู้เข้าร่วม', true);
+        const cur = dl.value.split('\n').map(x => x.trim()).filter(Boolean); dl.value = [...new Set([...cur, ...st.depts])].join('\n'); dcount();
+        toast(`เพิ่มแผนกจากรายชื่อแล้ว · กดบันทึกการตั้งค่า`); } catch (e) { toast(errMsg(e), true); } };
+    if ($('#c-rfile')) $('#c-rfile').onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      try { const d = Imp.parse(await Imp.readFile(f));
+        if (!d.people.length) return toast('ไม่พบรายชื่อในไฟล์ (ต้องมีคอลัมน์รหัสพนักงาน และชื่อ)', true);
+        if (!confirm(`แทนที่รายชื่อผู้เข้าร่วมด้วยไฟล์นี้ ${d.people.length} คน?\n(การจอง การลงชื่อ และผลสอบที่มีแล้วไม่หาย)`)) return;
+        const st = await rpc('set_course_roster', { p_course: c.id, p_rows: d.people }); this.rstat = st; rinfo(st); c.roster_source = st.source;
+        const cur = dl.value.split('\n').map(x => x.trim()).filter(Boolean), add = st.depts.filter(x => !cur.includes(x));
+        if (add.length && confirm(`มี ${add.length} แผนกในไฟล์ที่ยังไม่อยู่ในรายการแผนกของงาน · เพิ่มเลยไหม?`)) { dl.value = [...cur, ...add].join('\n'); dcount(); toast('เพิ่มแผนกแล้ว · กดบันทึกการตั้งค่า'); }
+        else toast(`อัปโหลดรายชื่อแล้ว ${st.count} คน`);
+      } catch (er) { toast(errMsg(er), true); } finally { e.target.value = ''; } };
     $('#c-pinr').onclick = () => { $('#c-pin').value = String(Math.floor(1000 + Math.random() * 9000)); };
     $('#c-save').onclick = () => this.saveSettings();
     const del = $('#c-del'); if (del) del.onclick = () => this.remove();
@@ -3038,7 +3076,7 @@ const Course = {
     if (!title) return toast('กรุณาใส่ชื่องาน', true);
     const steps = {}; $$('[data-step]').forEach(b => steps[b.dataset.step] = b.checked);
     const hs = $$('[data-hosp]').filter(b => b.checked).map(b => b.dataset.hosp);
-    const some = $('#c-dall').value === 'some';
+    const dlist = [...new Set($('#c-depts').value.split('\n').map(x => x.trim()).filter(Boolean))];
     const val = {
       title, cert_title: $('#c-cert').value.trim(), location: $('#c-loc').value.trim(),
       seats: Math.max(0, +$('#c-seat').value || 0), steps,
@@ -3046,8 +3084,7 @@ const Course = {
       quiz_id: $('#c-quiz').value || null, survey_id: $('#c-sv').value || null,
       pass_percent: Math.max(0, Math.min(100, +$('#c-pass').value || 0)),
       hospitals: hs.length === this.hospitals.length ? null : hs,
-      departments: some ? $$('[data-dept]').filter(b => b.checked).map(b => b.dataset.dept) : null,
-      roster_source: $('#c-roster').value || null,
+      departments: dlist.length ? dlist : null,
       finish_pin_enabled: $('#c-pinon').checked, finish_pin: $('#c-pin').value.trim()
     };
     if (!$('#c-co').disabled) val.cohosts = $('#c-co').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
@@ -3344,6 +3381,286 @@ const Attend = {
     sheet('ทั้งหมด', list);
     rows.forEach((r, k) => { const it = list.filter(a => a.training_id === r.id); if (it.length) sheet(`${k + 1} ${r.label}`, it); });
     X.writeFile(wb, `ลงชื่อ-${c.title}-${new Date().toISOString().slice(0, 10)}.xlsx`.replace(/[\\/:*?"<>|]/g, '_'));
+  }
+};
+
+// =====================================================================
+// v14.3: สร้างงานอบรมจากไฟล์ (.xlsx / .csv / ลิงก์ Google Sheet)
+// ชีต: งานอบรม (หัวข้อ–ค่า) · รอบ · รายชื่อ — หรือไฟล์รายชื่อจาก HR อย่างเดียวก็ได้
+// =====================================================================
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const TH_MON_S = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const Imp = {
+  norm: v => String(v ?? '').replace(/\s+/g, ' ').trim(),
+  // วันที่ → 'YYYY-MM-DD' (รับ Date, 19/11/2569, 2026-11-19, 19 พฤศจิกายน 2569, 19 พ.ย. 69)
+  date(v) {
+    if (v instanceof Date && !isNaN(v)) { const d = new Date(v.getTime() - v.getTimezoneOffset() * 6e4); return d.toISOString().slice(0, 10); }
+    const s = this.norm(v); if (!s) return '';
+    let y, m, d, x;
+    if ((x = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) [y, m, d] = [+x[1], +x[2], +x[3]];
+    else if ((x = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/))) [d, m, y] = [+x[1], +x[2], +x[3]];
+    else {
+      const mi = TH_MONTHS.findIndex(n => s.includes(n)), ms = TH_MON_S.findIndex(n => s.includes(n)), k = mi >= 0 ? mi : ms;
+      x = s.match(/(\d{1,2})\D+?(\d{2,4})\s*$/);
+      if (k >= 0 && x) [d, m, y] = [+x[1], k + 1, +x[2]];
+    }
+    if (!y) return '';
+    if (y < 100) y += 2500; if (y > 2400) y -= 543;
+    if (m < 1 || m > 12 || d < 1 || d > 31) return '';
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  },
+  time(v) {
+    if (v instanceof Date && !isNaN(v)) return `${String(v.getHours()).padStart(2, '0')}:${String(v.getMinutes()).padStart(2, '0')}`;
+    if (typeof v === 'number' && v >= 0 && v < 1) { const mins = Math.round(v * 1440); return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`; }
+    const x = this.norm(v).match(/(\d{1,2})[.:](\d{2})/); return x ? `${x[1].padStart(2, '0')}:${x[2]}` : '';
+  },
+  async readFile(file) {
+    await loadScript(XLSX_URL);
+    if (/\.csv$/i.test(file.name)) return XLSX.read(await file.text(), { type: 'string', cellDates: true });
+    return XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+  },
+  // ลิงก์ Google Sheet ที่แชร์ “ทุกคนที่มีลิงก์ดูได้”
+  async readSheetUrl(url) {
+    await loadScript(XLSX_URL);
+    const id = (url.match(/\/d\/([\w-]{20,})/) || [])[1]; if (!id) throw new Error('ลิงก์ Google Sheet ไม่ถูกต้อง');
+    try {
+      const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`);
+      if (r.ok) return XLSX.read(await r.arrayBuffer(), { type: 'array', cellDates: true });
+    } catch (e) {}
+    // สำรอง: อ่านทีละชีตแบบ CSV
+    const wb = XLSX.utils.book_new(); let got = 0;
+    for (const name of ['งานอบรม', 'รอบ', 'รายชื่อ', '']) {
+      try {
+        const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv${name ? '&sheet=' + encodeURIComponent(name) : ''}`);
+        if (!r.ok) continue; const t = await r.text(); if (!t.trim() || /<html/i.test(t)) continue;
+        const ws = XLSX.read(t, { type: 'string' }).Sheets.Sheet1; XLSX.utils.book_append_sheet(wb, ws, name || 'ชีต1'); got++;
+      } catch (e) {}
+    }
+    if (!got) throw new Error('อ่านลิงก์ไม่ได้ · ตั้งการแชร์เป็น “ทุกคนที่มีลิงก์ดูได้” หรือดาวน์โหลดเป็น .xlsx แล้วอัปโหลดแทน');
+    return wb;
+  },
+  rows(ws) { return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }); },
+  sheet(wb, re) { const n = wb.SheetNames.find(x => re.test(x.trim())); return n ? this.rows(wb.Sheets[n]) : null; },
+  // หาแถวหัวตาราง + คอลัมน์ที่ต้องการ
+  header(rows, spec, need) {
+    for (let r = 0; r < Math.min(rows.length, 8); r++) {
+      const h = rows[r].map(x => this.norm(x).toLowerCase()), col = {};
+      for (const [k, re] of Object.entries(spec)) { const i = h.findIndex(x => re.test(x)); if (i >= 0) col[k] = i; }
+      if (need.every(k => col[k] !== undefined)) return { r, col };
+    }
+    return null;
+  },
+  ROSTER: { id: /^(id\b|id workplaze|รหัส|emp|employee)/, prefix: /prefix|คำนำหน้า/, first: /^(first|ชื่อ$|ชื่อจริง)/, last: /^(last|สกุล|นามสกุล)/,
+            full: /display|ชื่อ-?\s?สกุล|ชื่อ-?\s?นามสกุล|full ?name/, dept: /dept|แผนก|หน่วยงาน/, hosp: /hosp|โรงพยาบาล|^รพ/, note: /^note|หมายเหตุ/ },
+  parse(wb) {
+    const out = { info: {}, rounds: [], people: [], issues: [], src: {} };
+    // 1) ชีตงานอบรม (หัวข้อ–ค่า)
+    const info = this.sheet(wb, /^(งานอบรม|ข้อมูลงาน|info)/i);
+    if (info) {
+      out.src.info = true;
+      for (const [k0, v] of info) { const k = this.norm(k0), val = v instanceof Date ? v : this.norm(v); if (!k || val === '') continue;
+        if (/^ชื่องาน|^ชื่อกิจกรรม|^title/.test(k)) out.info.title = val;
+        else if (/หลักสูตร/.test(k)) out.info.cert_title = val;
+        else if (/สถานที่/.test(k)) out.info.location = val;
+        else if (/ที่นั่ง/.test(k)) out.info.seats = Math.max(0, parseInt(val, 10) || 0);
+        else if (/โรงพยาบาล/.test(k)) out.info.hospitals = /ทั้งหมด|^all/i.test(val) ? null : String(val).split(/[,\/]/).map(x => x.trim()).filter(Boolean);
+        else if (/ขั้นตอน/.test(k)) out.info.stepsText = String(val);
+        else if (/ปิดรับ/.test(k)) out.info.booking_close_days = Math.max(0, parseInt(val, 10) || 0);
+        else if (/^วันที่/.test(k)) out.info.date = this.date(v);
+      }
+    }
+    // 2) ชีตรอบ
+    const rd = this.sheet(wb, /^(รอบ|รุ่น|rounds?)/i);
+    if (rd) {
+      const h = this.header(rd, { label: /ชื่อรอบ|ชื่อรุ่น|^รอบ$|^รุ่น$|round/, date: /วันที่|date/, s: /เริ่ม|start/, e: /จบ|สิ้นสุด|end/, seats: /ที่นั่ง|seat/ }, ['label']);
+      if (h) { out.src.rounds = true;
+        for (const r of rd.slice(h.r + 1)) { const label = this.norm(r[h.col.label]); if (!label) continue;
+          out.rounds.push({ label, date: h.col.date !== undefined ? this.date(r[h.col.date]) : '', s: h.col.s !== undefined ? this.time(r[h.col.s]) : '',
+            e: h.col.e !== undefined ? this.time(r[h.col.e]) : '', seats: h.col.seats !== undefined ? (parseInt(r[h.col.seats], 10) || '') : '' }); } }
+    }
+    // 3) รายชื่อ: ชีตชื่อ “รายชื่อ” หรือชีตแรกที่มีคอลัมน์รหัส
+    let pr = this.sheet(wb, /^(รายชื่อ|ผู้เข้าร่วม|people|staff|full ?time)/i), ph = pr && this.header(pr, this.ROSTER, ['id']);
+    if (!ph) for (const n of wb.SheetNames) { const rows = this.rows(wb.Sheets[n]), h = this.header(rows, this.ROSTER, ['id']); if (h && (h.col.full !== undefined || h.col.first !== undefined)) { pr = rows; ph = h; break; } }
+    if (ph) {
+      out.src.people = true;
+      const c = ph.col, notes = [];
+      for (const r of pr.slice(ph.r + 1)) {
+        if (c.note !== undefined && this.norm(r[c.note])) notes.push(this.norm(r[c.note]));
+        const id = this.norm(r[c.id]); if (!id) continue;
+        let name = c.full !== undefined ? this.norm(r[c.full]) : '';
+        if (!name) name = [c.first, c.last].filter(i => i !== undefined).map(i => this.norm(r[i])).join(' ').trim();
+        out.people.push({ emp_id: id.toUpperCase(), name: noPrefix(name), dept: c.dept !== undefined ? this.norm(r[c.dept]) : '', hospital: c.hosp !== undefined ? this.norm(r[c.hosp]) : '' });
+      }
+      // ไฟล์ HR ที่เขียนรายละเอียดงานไว้ในคอลัมน์ Note (ชื่อกิจกรรม / วันที่ / เลือกรอบ)
+      if (notes.length) {
+        const at = re => notes.findIndex(x => re.test(x));
+        let i = at(/^ชื่อ(กิจกรรม|งาน)/); if (i >= 0 && notes[i + 1] && !out.info.title) out.info.title = notes[i + 1];
+        i = at(/^วันที่/); if (i >= 0 && notes[i + 1] && !out.info.date) out.info.date = this.date(notes[i + 1]);
+        i = at(/^สถานที่/); if (i >= 0 && notes[i + 1] && !out.info.location) out.info.location = notes[i + 1];
+        i = at(/รอบ/); if (i >= 0 && !out.rounds.length)
+          for (const x of notes.slice(i + 1)) { const m = x.match(/^\d+\s*[.)]\s*(.+)$/); if (!m) break; out.rounds.push({ label: m[1].trim(), date: '', s: '', e: '', seats: '' }); }
+      }
+    }
+    // ค่าเริ่มต้นของรอบ: วันที่ของงาน + เวลาตามคำว่า เช้า/บ่าย/ทั้งวัน
+    let guessed = 0;
+    out.rounds.forEach(r => {
+      if (!r.date && out.info.date) r.date = out.info.date;
+      if (!r.s || !r.e) { guessed++;
+        const [s, e] = /ทั้งวัน/.test(r.label) ? ['09:00', '16:00'] : /บ่าย/.test(r.label) ? ['13:00', '16:00'] : /เช้า/.test(r.label) ? ['09:00', '12:00'] : ['09:00', '12:00'];
+        r.s = r.s || s; r.e = r.e || e; r.guess = true; }
+    });
+    // ตรวจข้อมูล
+    const I = out.issues, ids = new Map();
+    out.people.forEach((p, k) => { const key = p.emp_id.replace(/^0+/, ''); if (ids.has(key)) p.dup = ids.get(key) + 1; else ids.set(key, k); });
+    const dups = out.people.filter(p => p.dup), noName = out.people.filter(p => !p.name), noDept = out.people.filter(p => !p.dept);
+    if (!out.info.title) I.push(['bad', 'ไม่พบชื่องาน · กรอกในช่องชื่องานด้านล่าง']);
+    if (!out.rounds.length) I.push(['bad', 'ไม่พบรอบ · เพิ่มรอบในตารางด้านล่างอย่างน้อย 1 รอบ']);
+    if (out.rounds.some(r => !r.date)) I.push(['bad', 'มีรอบที่ไม่มีวันที่ · ใส่วันที่ในตารางรอบ']);
+    if (guessed) I.push(['warn', `${guessed} รอบไม่มีเวลาในไฟล์ → ใช้เวลาเริ่มต้น (เช้า 09:00–12:00 · บ่าย 13:00–16:00 · ทั้งวัน 09:00–16:00) แก้ได้ในตาราง`]);
+    if (!out.people.length) I.push(['warn', 'ไม่พบรายชื่อในไฟล์ · สร้างงานได้ แต่ผู้เข้าร่วมต้องกรอกชื่อ-แผนกเอง']);
+    else I.push(['ok', `รายชื่อ ${out.people.length} คน · ${new Set(out.people.map(p => p.dept).filter(Boolean)).size} แผนก`]);
+    if (dups.length) I.push(['warn', `รหัสซ้ำ ${dups.length} แถว (ใช้แถวแรก): ${dups.slice(0, 5).map(p => p.emp_id).join(', ')}${dups.length > 5 ? ' …' : ''}`]);
+    if (noName.length) I.push(['warn', `ไม่มีชื่อ ${noName.length} คน: ${noName.slice(0, 5).map(p => p.emp_id).join(', ')}${noName.length > 5 ? ' …' : ''}`]);
+    if (noDept.length) I.push(['warn', `ไม่มีแผนก ${noDept.length} คน`]);
+    return out;
+  },
+  // ไฟล์ตัวอย่าง 3 ชีต
+  async template() {
+    try { await loadScript(XLSX_URL); } catch (e) { return toast('โหลดตัวสร้าง Excel ไม่ได้ ตรวจสอบอินเทอร์เน็ต', true); }
+    const X = window.XLSX, wb = X.utils.book_new();
+    const a = X.utils.aoa_to_sheet([['หัวข้อ', 'ค่า', 'คำอธิบาย'],
+      ['ชื่องาน', 'Quality Fair & Safety Day ครั้งที่ 2/2569', 'จำเป็น · แสดงในระบบและหน้าลงชื่อ'],
+      ['ชื่อหลักสูตรเต็ม', '', 'หัวใบลงชื่อ · ว่าง = ใช้ชื่องาน'],
+      ['สถานที่', '', ''], ['ที่นั่งต่อรอบ', 0, '0 = ไม่จำกัด'],
+      ['โรงพยาบาล', 'ทั้งหมด', 'ทั้งหมด หรือชื่อ รพ. คั่นด้วย ,'],
+      ['ขั้นตอนที่ใช้', 'ลงทะเบียนเข้า', 'เลือกจาก: จอง, ลงทะเบียนเข้า, Pre-test, Post-test, ประเมิน, ลงชื่อจบ'],
+      ['ปิดรับจองก่อนวันงาน (วัน)', 1, '0 = จองได้ถึงเวลาเริ่มรอบ']]);
+    a['!cols'] = [{ wch: 26 }, { wch: 44 }, { wch: 60 }];
+    const r = X.utils.aoa_to_sheet([['ชื่อรอบ', 'วันที่', 'เวลาเริ่ม', 'เวลาจบ', 'ที่นั่ง'],
+      ['รอบเช้า', '19/11/2569', '09:00', '12:00', ''], ['รอบบ่าย', '19/11/2569', '13:00', '16:00', ''], ['ทั้งวัน (เช้า + บ่าย)', '19/11/2569', '09:00', '16:00', '']]);
+    r['!cols'] = [{ wch: 36 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 8 }];
+    const p = X.utils.aoa_to_sheet([['ID workplaze', 'Prefix', 'First Name', 'Last', 'Dept Descr', 'Jobcode Descr', 'โรงพยาบาล'],
+      ['000001', 'นางสาว', 'ตัวอย่าง', 'หนึ่ง', 'Emergency Department', 'O1, Registered Nurse', ''],
+      ['000002', 'นาย', 'ตัวอย่าง', 'สอง', 'Information Technology Department', 'O1, Information Technology', '']]);
+    p['!cols'] = [{ wch: 14 }, { wch: 9 }, { wch: 16 }, { wch: 16 }, { wch: 32 }, { wch: 26 }, { wch: 18 }];
+    X.utils.book_append_sheet(wb, a, 'งานอบรม'); X.utils.book_append_sheet(wb, r, 'รอบ'); X.utils.book_append_sheet(wb, p, 'รายชื่อ');
+    X.writeFile(wb, 'แม่แบบ-สร้างงานอบรม.xlsx');
+  }
+};
+const STEP_WORDS = { booking: /จอง/, checkin: /ลงทะเบียนเข้า|ลงชื่อเข้า/, pre: /pre/i, post: /post/i, survey: /ประเมิน/, finish: /ลงชื่อจบ|จบ/ };
+
+const CourseImport = {
+  html() {
+    return `<section class="tcard"><h3><span class="stepn">1</span>ดาวน์โหลดไฟล์ตัวอย่าง แล้วกรอกข้อมูล</h3>
+        <p class="hint">มี 3 ชีต: <b>งานอบรม</b> (ชื่อ สถานที่ ขั้นตอน) · <b>รอบ</b> (ชื่อรอบ วัน เวลา ที่นั่ง) · <b>รายชื่อ</b> (พนักงานที่ร่วมได้) — ชีตรายชื่อวางข้อมูลจากไฟล์ HR ได้ทันที
+          · ใช้ไฟล์รายชื่อจาก HR อย่างเดียวก็ได้ แล้วกรอกชื่องานกับรอบในขั้นที่ 3</p>
+        <div class="row"><button class="btn light sm" id="im-tpl" type="button">⬇ ดาวน์โหลดไฟล์ตัวอย่าง (.xlsx)</button></div></section>
+      <section class="tcard"><h3><span class="stepn">2</span>อัปโหลดไฟล์ หรือวางลิงก์ Google Sheet</h3>
+        <div class="imgrid">
+          <label class="drop" id="im-drop"><input type="file" id="im-file" accept=".xlsx,.xls,.csv" hidden><b>ลากไฟล์มาวางที่นี่</b><span class="hint">หรือแตะเพื่อเลือกไฟล์ · .xlsx / .csv</span></label>
+          <div class="fld"><label for="im-url">ลิงก์ Google Sheet (แชร์แบบ “ทุกคนที่มีลิงก์ดูได้”)</label>
+            <div class="row"><input class="inp grow" id="im-url" placeholder="https://docs.google.com/spreadsheets/d/…" style="min-width:0"><button class="btn sm" id="im-read" type="button">อ่านไฟล์</button></div></div>
+        </div>
+        <p class="hint">อ่านไฟล์ในเครื่องก่อน ยังไม่บันทึกอะไรจนกว่าจะกด “สร้างงานอบรม”</p></section>
+      <div id="im-out"></div>`;
+  },
+  bind(ctx) {
+    this.ctx = ctx;
+    $('#im-tpl').onclick = () => Imp.template();
+    const f = $('#im-file'), drop = $('#im-drop');
+    f.onchange = () => f.files[0] && this.load(() => Imp.readFile(f.files[0]), f.files[0].name);
+    drop.ondragover = e => { e.preventDefault(); drop.classList.add('on'); };
+    drop.ondragleave = () => drop.classList.remove('on');
+    drop.ondrop = e => { e.preventDefault(); drop.classList.remove('on'); const x = e.dataTransfer.files[0]; if (x) this.load(() => Imp.readFile(x), x.name); };
+    $('#im-read').onclick = () => { const u = $('#im-url').value.trim(); if (u) this.load(() => Imp.readSheetUrl(u), 'Google Sheet'); };
+  },
+  async load(get, name) {
+    const box = $('#im-out'); box.innerHTML = '<div class="center-msg" style="min-height:16vh"><div class="spinner"></div></div>';
+    try { this.d = Imp.parse(await get()); this.name = name; this.render(); }
+    catch (e) { box.innerHTML = `<div class="notice">อ่านไฟล์ไม่ได้: ${esc(errMsg(e))}</div>`; }
+  },
+  render() {
+    const d = this.d, i = d.info, ctx = this.ctx, P = d.people;
+    const steps = i.stepsText ? Object.fromEntries(STEPS.map(([k]) => [k, STEP_WORDS[k].test(i.stepsText)]))
+      : { booking: false, checkin: true, pre: false, post: false, survey: false, finish: false };
+    this.steps = steps;
+    const depts = [...new Set(P.map(p => p.dept).filter(Boolean))];
+    $('#im-out').innerHTML = `<section class="tcard"><h3><span class="stepn">3</span>ตรวจข้อมูลก่อนสร้าง <span class="hint" style="font-weight:400">· ${esc(this.name)}</span></h3>
+        <div class="frm2">
+          <div class="fld"><label for="im-title">ชื่องาน *</label><input class="inp" id="im-title" value="${esc(i.title || '')}"></div>
+          <div class="fld"><label for="im-loc">สถานที่</label><input class="inp" id="im-loc" value="${esc(i.location || '')}"></div>
+          <div class="fld"><label for="im-seat">ที่นั่งต่อรอบ (0 = ไม่จำกัด)</label><input class="inp" id="im-seat" type="number" min="0" value="${i.seats || 0}"></div>
+        </div>
+        <div class="tblwrap"><table class="rep"><thead><tr><th>ชื่อรอบ *</th><th>วันที่ *</th><th>เริ่ม</th><th>จบ</th><th>ที่นั่ง</th><th></th></tr></thead>
+          <tbody id="im-rounds">${d.rounds.map((r, k) => this.roundRow(r, k)).join('')}</tbody></table></div>
+        <div class="row"><button class="btn light sm" id="im-addr" type="button">+ เพิ่มรอบ</button></div>
+        <div class="issues">${d.issues.map(([t, m]) => `<div><span class="phase ${t === 'ok' ? 'open' : t === 'warn' ? 'post' : 'bad'}">${t === 'ok' ? 'ผ่าน' : t === 'warn' ? 'เตือน' : 'แก้ก่อน'}</span> ${esc(m)}</div>`).join('')}</div>
+        ${P.length ? `<details><summary style="cursor:pointer;font-weight:600">ดูรายชื่อ ${P.length} คน · แผนก ${depts.length}</summary>
+          <div class="tblwrap" style="max-height:320px;overflow:auto;margin-top:8px"><table class="rep"><thead><tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>แผนก</th><th>รพ.</th></tr></thead>
+          <tbody>${P.slice(0, 500).map(p => `<tr ${p.dup || !p.name ? 'class="low"' : ''}><td>${esc(p.emp_id)}</td><td>${esc(p.name)}</td><td>${esc(p.dept)}</td><td>${esc(p.hospital)}</td></tr>`).join('')}</tbody></table></div>
+          ${P.length > 500 ? `<p class="hint">แสดง 500 คนแรก</p>` : ''}</details>` : ''}
+      </section>
+      <section class="tcard"><h3><span class="stepn">4</span>ตั้งค่าที่เหลือ แล้วสร้าง</h3>
+        <div class="fld"><label>ขั้นตอนที่ใช้</label><div class="row" style="gap:14px">${STEPS.map(([k, n], j) =>
+          `<label class="switch"><input type="checkbox" data-imstep="${k}" ${steps[k] ? 'checked' : ''}> ${j + 1} ${n.replace(' ผ่าน', '')}</label>`).join('')}</div></div>
+        <div class="frm2">
+          <div class="fld"><label for="im-quiz">ชุดคำถาม Pre/Post</label><select class="inp" id="im-quiz"><option value="">— ไม่ใช้แบบทดสอบ —</option>
+            ${ctx.quizzes.filter(q => q.questions && q.questions[0] && q.questions[0].count).map(q => `<option value="${q.id}">${esc(q.title)}</option>`).join('')}</select></div>
+          <div class="fld"><label for="im-sv">แบบประเมิน</label><select class="inp" id="im-sv"><option value="">— ไม่มีแบบประเมิน —</option>
+            ${ctx.surveys.map(s => `<option value="${s.id}">${esc(s.title)}</option>`).join('')}</select></div>
+        </div>
+        <div class="fld"><label>โรงพยาบาล</label><div class="row" style="gap:16px">${ctx.hospitals.map(h =>
+          `<label class="switch"><input type="checkbox" data-imhosp="${esc(h)}" ${!i.hospitals || i.hospitals.includes(h) ? 'checked' : ''}> ${esc(h)}</label>`).join('')}</div></div>
+        <p class="hint">แผนกของงานนี้ใช้ตามรายชื่อในไฟล์ (${depts.length} แผนก) แก้ เพิ่ม หรือลบได้ภายหลังที่แท็บตั้งค่า · ไม่กระทบรายชื่อแผนกของงานอื่น</p>
+        <div class="row"><span class="grow"></span><button class="btn sun" id="im-go" type="button">สร้างงานอบรม</button></div>
+      </section>`;
+    $('#im-addr').onclick = () => { this.sync(); d.rounds.push({ label: '', date: i.date || '', s: '09:00', e: '12:00', seats: '' }); this.render(); };
+    $$('[data-rmr]').forEach(b => b.onclick = () => { this.sync(); d.rounds.splice(+b.dataset.rmr, 1); this.render(); });
+    $('#im-go').onclick = () => this.create();
+    this.goLabel();
+    $$('#im-out input').forEach(x => x.addEventListener('input', () => this.goLabel()));
+  },
+  roundRow(r, k) {
+    return `<tr><td><input class="inp" data-rf="label" value="${esc(r.label)}" style="min-width:220px"></td>
+      <td><input class="inp" type="date" data-rf="date" value="${esc(r.date)}"></td>
+      <td><input class="inp" type="time" data-rf="s" value="${esc(r.s)}"></td><td><input class="inp" type="time" data-rf="e" value="${esc(r.e)}"></td>
+      <td><input class="inp" type="number" min="0" data-rf="seats" value="${esc(r.seats)}" style="width:80px" placeholder="ตามงาน"></td>
+      <td><button class="btn danger sm" type="button" data-rmr="${k}">ลบ</button></td></tr>`;
+  },
+  sync() { $$('#im-rounds tr').forEach((tr, k) => { const r = this.d.rounds[k]; $$('[data-rf]', tr).forEach(x => r[x.dataset.rf] = x.value.trim()); }); },
+  goLabel() { const b = $('#im-go'); if (b) b.textContent = `สร้างงานอบรม (${$$('#im-rounds tr').length} รอบ · ${this.d.people.length} คน)`; },
+  async create() {
+    this.sync();
+    const d = this.d, ctx = this.ctx, title = $('#im-title').value.trim(), rounds = d.rounds.filter(r => r.label);
+    if (!title) return toast('กรุณาใส่ชื่องาน', true);
+    if (!rounds.length) return toast('กรุณาเพิ่มรอบอย่างน้อย 1 รอบ', true);
+    if (rounds.some(r => !r.date)) return toast('มีรอบที่ยังไม่มีวันที่', true);
+    const steps = {}; $$('[data-imstep]').forEach(b => steps[b.dataset.imstep] = b.checked);
+    const quiz = $('#im-quiz').value || null;
+    if ((steps.pre || steps.post) && !quiz) return toast('เลือกใช้ Pre/Post ต้องเลือกชุดคำถามด้วย', true);
+    const hs = $$('[data-imhosp]').filter(b => b.checked).map(b => b.dataset.imhosp);
+    const people = [], seen = new Set();
+    d.people.forEach(p => { const k = p.emp_id.replace(/^0+/, ''); if (!seen.has(k)) { seen.add(k); people.push(p); } });
+    const depts = [...new Set(people.map(p => p.dept).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th'));
+    const b = $('#im-go'); b.disabled = true; b.textContent = 'กำลังสร้างงาน…';
+    try {
+      const val = { title, cert_title: d.info.cert_title || '', location: $('#im-loc').value.trim(), seats: Math.max(0, +$('#im-seat').value || 0),
+        steps, booking_open: false, booking_close_days: d.info.booking_close_days ?? 1, quiz_id: quiz, survey_id: $('#im-sv').value || null,
+        pass_percent: 80, hospitals: hs.length === ctx.hospitals.length ? null : hs, departments: depts.length ? depts : null,
+        finish_pin_enabled: !!steps.finish, finish_pin: String(Math.floor(1000 + Math.random() * 9000)) };
+      const { data: c, error } = await sb.from('courses').insert(val).select('*').single();
+      if (error) throw error;
+      if (people.length) { b.textContent = `กำลังบันทึกรายชื่อ ${people.length} คน…`; await rpc('set_course_roster', { p_course: c.id, p_rows: people }); }
+      let k = 0;
+      for (const r of rounds) {
+        b.textContent = `กำลังสร้างรอบ ${++k}/${rounds.length}…`;
+        const at = t => t ? new Date(`${r.date}T${t}:00+07:00`).toISOString() : null;
+        const x = await rpc('create_course_round', { p_course: c.id, p_label: r.label, p_starts: at(r.s), p_ends: at(r.e) });
+        if (r.seats) await sb.from('trainings').update({ seats: +r.seats }).eq('id', x.id);
+      }
+      toast('สร้างงานอบรมแล้ว'); location.hash = '#course/' + c.id;
+    } catch (e) { toast(errMsg(e), true); b.disabled = false; this.goLabel(); }
   }
 };
 
