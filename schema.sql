@@ -2505,3 +2505,43 @@ create policy trainings_owner_upd on public.trainings for update to authenticate
          or (course_id is not null and public.can_manage_course(course_id)))
   with check (owner_id = auth.uid() or public.is_admin() or public.is_cohost(cohosts)
          or (course_id is not null and public.can_manage_course(course_id)));
+
+-- =====================================================================
+-- 17) v14.1: ปิดรับจองเฉพาะรุ่น (งานยังเปิดรับจองรุ่นอื่นอยู่)
+-- =====================================================================
+alter table public.trainings add column if not exists booking_closed boolean not null default false;
+
+create or replace function public.round_bookable(t trainings, c courses) returns boolean
+language sql stable as $$
+  select c.booking_open and coalesce((c.steps ->> 'booking')::boolean, false)
+     and not coalesce(t.booking_closed, false)
+     and (t.starts_at is null
+          or now() < (date_trunc('day', t.starts_at at time zone 'Asia/Bangkok')
+                      - make_interval(days => c.booking_close_days)) at time zone 'Asia/Bangkok'
+          or (c.booking_close_days = 0 and now() < t.starts_at))
+$$;
+
+create or replace function public.course_summary(p_course uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses;
+begin
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์ดูงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  return coalesce((select jsonb_agg(jsonb_build_object(
+      'id', t.id, 'code', t.code, 'label', coalesce(t.round_label, t.title), 'round_no', t.round_no,
+      'starts_at', t.starts_at, 'seats', public.round_seats(t),
+      'booking_closed', t.booking_closed, 'bookable', public.round_bookable(t, c),
+      'open', jsonb_build_object('checkin', t.checkin_open, 'pre', t.pre_open, 'post', t.post_open, 'finish', t.finish_open),
+      'booked',  (select count(*) from bookings b where b.training_id = t.id),
+      'checkin', (select count(*) from attendance a where a.training_id = t.id and a.checkin_at is not null),
+      'walk_in', (select count(*) from attendance a where a.training_id = t.id and a.walk_in and a.checkin_at is not null),
+      'pre',     (select count(distinct public.roster_norm(emp_id)) from test_submissions s where s.training_id = t.id and s.phase = 'pre'),
+      'passed',  (select count(distinct public.roster_norm(emp_id)) from test_submissions s where s.training_id = t.id and s.phase = 'post'
+                    and s.score * 100 >= t.pass_percent * t.total),
+      'survey',  (select count(*) from survey_done d where d.training_id = t.id),
+      'finish',  (select count(*) from attendance a where a.training_id = t.id and a.finish_at is not null))
+    order by t.starts_at nulls last, t.round_no, t.created_at)
+    from trainings t where t.course_id = p_course), '[]'::jsonb);
+end $$;
+revoke execute on function public.course_summary(uuid) from public, anon;
+grant execute on function public.course_summary(uuid) to authenticated;
