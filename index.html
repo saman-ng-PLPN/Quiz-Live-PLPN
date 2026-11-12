@@ -2425,7 +2425,7 @@ const Training = {
   },
   render() {
     const t = this.t;
-    if (!t.total && !this.subs.length) return this.renderNoQuiz();
+    if (!t.total) return this.renderNoQuiz();
     const tabs = [['sum', 'ภาพรวม'], ['people', 'รายคน'], ['dept', 'รายแผนก'], ['items', 'รายข้อ']].concat(t.survey_id ? [['survey', 'แบบประเมิน']] : []);
     if (!tabs.some(x => x[0] === this.tab)) this.tab = 'sum';
     app.innerHTML = adminShell(this.user, `
