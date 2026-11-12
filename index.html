@@ -2831,10 +2831,10 @@ const Course = {
     const used = STEPS.filter(([k]) => stepOn(c, k));
     const cell = (r, k) => { const v = r[STEP_KEY[k]] || 0;
       return k === 'booking' ? `<span>${v}${r.seats ? ' / ' + r.seats : ''}</span>${r.seats ? `<i class="bar"><i style="width:${Math.min(100, Math.round(v / r.seats * 100))}%"></i></i>` : ''}` : v; };
-    const tot = courseTotals(c, rows), bk = stepOn(c, 'booking');
+    const tot = courseTotals(c, rows), bk = true, bkOn = stepOn(c, 'booking') && c.booking_open;
     const bkCell = r => {
-      const note = !c.booking_open ? 'งานปิดจอง' : r.booking_closed ? 'ปิดรุ่นนี้' : r.bookable ? 'เปิดรับ' : (r.seats && r.booked >= r.seats ? 'เต็ม' : 'หมดเวลาจอง');
-      return `<label class="switch mini" title="เปิด/ปิดรับจองเฉพาะรุ่นนี้"><input type="checkbox" data-bk="${r.id}" ${r.booking_closed ? '' : 'checked'} ${c.booking_open ? '' : 'disabled'}></label>
+      const note = !stepOn(c, 'booking') ? 'ไม่ใช้ขั้นจอง' : !c.booking_open ? 'งานปิดจอง' : r.booking_closed ? 'ปิดรุ่นนี้' : r.bookable ? 'เปิดรับ' : (r.seats && r.booked >= r.seats ? 'เต็ม' : 'หมดเวลาจอง');
+      return `<label class="switch mini" title="เปิด/ปิดรับจองเฉพาะรุ่นนี้"><input type="checkbox" data-bk="${r.id}" ${r.booking_closed || !bkOn ? '' : 'checked'} ${bkOn ? '' : 'disabled'}></label>
         <div class="hint" style="white-space:nowrap">${note}</div>`; };
     const state = r => { const o = r.open || {}, on = ['checkin', 'pre', 'post', 'finish'].filter(k => o[k]);
       if (on.length) return `<span class="phase open">เปิด ${on.map(k => ({ checkin: 'ลงทะเบียน', pre: 'Pre', post: 'Post', finish: 'ลงชื่อจบ' })[k]).join(' · ')}</span>`;
@@ -2851,7 +2851,7 @@ const Course = {
           ${bk ? `<td>${bkCell(r)}</td>` : ''}<td>${state(r)}</td><td><a class="btn sm" href="#training/${r.id}">เปิดรุ่น</a></td></tr>`).join('')}
           <tr class="tot"><td><b>รวม</b></td><td></td>${used.map(([k]) => `<td class="num"><b>${tot[k]}${k === 'booking' && tot.seats ? ' / ' + tot.seats : ''}</b></td>`).join('')}${bk ? '<td></td>' : ''}<td></td><td></td></tr>
         </tbody></table></div>` : '<div class="empty">ยังไม่มีรุ่น · เพิ่มรุ่นแรกได้ด้านล่าง</div>'}
-      ${bk && !c.booking_open ? '<p class="hint" style="margin-top:8px">งานนี้ยังปิดรับจองทั้งงาน · เปิดได้ที่แท็บ <b>ตั้งค่า</b> แล้วค่อยเลือกปิดเฉพาะรุ่นที่นี่</p>' : ''}
+      ${!bkOn ? `<p class="hint" style="margin-top:8px">สวิตช์ <b>รับจอง</b> รายรุ่นยังกดไม่ได้ เพราะ${!stepOn(c, 'booking') ? 'งานนี้ไม่ได้ใช้ขั้นจอง' : 'งานนี้ยังปิดรับจองทั้งงาน'} · เปิดได้ที่แท็บ <a href="#course/${c.id}:settings">ตั้งค่า</a> (ขั้นตอนที่ใช้ → 1 จอง และ เปิดรับจอง)</p>` : ''}
       ${this.addRoundHTML()}`;
     this.bindAddRound();
     $$('[data-bk]', box).forEach(b => b.onchange = async () => {
