@@ -3046,6 +3046,14 @@ function countUp(el) {
   window.addEventListener('hashchange', route);
   route();
 })();
+
+// ลิงก์ทดลอง (preview.*) — แสดงแถบเตือนว่าเป็นเวอร์ชันทดลอง ใช้ฐานข้อมูลจริง
+if (/^preview\./.test(location.hostname)) {
+  const b = document.createElement('div');
+  b.textContent = 'เวอร์ชันทดลอง · ใช้ข้อมูลจริง';
+  b.style.cssText = 'position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:100;background:#2563eb;color:#fff;font:600 12px/1.6 system-ui,sans-serif;padding:2px 12px;border-radius:8px 8px 0 0;pointer-events:none';
+  document.body.appendChild(b);
+}
 </script>
 </body>
 </html>
