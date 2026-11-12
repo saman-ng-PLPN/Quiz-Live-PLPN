@@ -2545,3 +2545,94 @@ begin
 end $$;
 revoke execute on function public.course_summary(uuid) from public, anon;
 grant execute on function public.course_summary(uuid) to authenticated;
+
+-- =====================================================================
+-- 18) v14.2: หน้าจอง/ลงชื่อของงาน (ลิงก์ ?c=รหัสงาน) — ข้อมูลรอบสำหรับลงชื่อ
+-- =====================================================================
+create or replace function public.course_info(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses;
+begin
+  select * into c from courses where booking_code = trim(p_code);
+  if c.id is null then raise exception 'ไม่พบงานอบรมนี้ ตรวจสอบลิงก์อีกครั้ง'; end if;
+  return jsonb_build_object(
+    'id', c.id, 'title', c.title, 'cert_title', c.cert_title, 'location', c.location,
+    'steps', c.steps,
+    'booking_open', c.booking_open and coalesce((c.steps ->> 'booking')::boolean, false),
+    'roster', c.roster_source is not null,
+    'hospitals', coalesce(c.hospitals, public.list_hospitals()),
+    'departments', case when jsonb_typeof(c.departments) = 'array' then c.departments else public.list_departments() end,
+    'rounds', coalesce((select jsonb_agg(jsonb_build_object(
+        'id', t.id, 'code', t.code, 'label', coalesce(t.round_label, t.title), 'starts_at', t.starts_at, 'ends_at', t.ends_at,
+        'seats', public.round_seats(t),
+        'booked', (select count(*) from bookings b where b.training_id = t.id),
+        'open', public.round_bookable(t, c),
+        'checkin_open', t.checkin_open and coalesce((c.steps ->> 'checkin')::boolean, false),
+        'finish_open', t.finish_open and coalesce((c.steps ->> 'finish')::boolean, false))
+        order by t.round_no nulls last, t.starts_at, t.created_at)
+      from trainings t where t.course_id = c.id), '[]'::jsonb));
+end $$;
+revoke execute on function public.course_info(text) from public;
+grant execute on function public.course_info(text) to anon, authenticated;
+
+-- เพิ่มรุ่นในงาน: มีชุดคำถาม → คัดลอกคำถามแบบเดิม · ไม่มี (งานลงชื่ออย่างเดียว) → รุ่นว่างไม่มีคำถาม
+create or replace function public.create_course_round(
+  p_course uuid, p_label text, p_starts timestamptz default null, p_ends timestamptz default null
+) returns jsonb language plpgsql security definer set search_path = public as $$
+declare c courses; r jsonb; v_code text; v_id uuid; v_n int; i int := 0; v_label text := left(trim(coalesce(p_label, '')), 100);
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  select count(*) into v_n from trainings where course_id = c.id;
+  if v_label = '' then v_label := 'รุ่น ' || (v_n + 1); end if;
+  if c.quiz_id is not null then
+    r := public.create_training(c.quiz_id, c.title || ' · ' || v_label, c.pass_percent);
+    v_id := (r ->> 'id')::uuid; v_code := r ->> 'code';
+  else
+    if coalesce((c.steps ->> 'pre')::boolean, false) or coalesce((c.steps ->> 'post')::boolean, false) then
+      raise exception 'งานนี้ใช้ Pre/Post · เลือกชุดคำถามในแท็บตั้งค่าก่อน';
+    end if;
+    loop
+      v_code := lpad(floor(random() * 1000000)::int::text, 6, '0');
+      exit when not exists (select 1 from trainings where code = v_code);
+      i := i + 1; if i > 50 then raise exception 'สร้างรหัสไม่สำเร็จ ลองใหม่อีกครั้ง'; end if;
+    end loop;
+    insert into trainings (owner_id, owner_email, quiz_id, title, code, pass_percent, questions, total)
+    values (auth.uid(), coalesce(auth.jwt() ->> 'email', ''), null, left(c.title || ' · ' || v_label, 200), v_code, c.pass_percent, '[]'::jsonb, 0)
+    returning id into v_id;
+  end if;
+  update trainings set course_id = c.id, series_id = c.id, series = c.title, round_label = v_label, round_no = v_n + 1,
+         starts_at = p_starts, ends_at = p_ends, survey_id = c.survey_id, departments = c.departments,
+         roster = c.roster_source, cohosts = c.cohosts
+   where id = v_id;
+  return jsonb_build_object('id', v_id, 'code', v_code, 'label', v_label);
+end $$;
+revoke execute on function public.create_course_round(uuid, text, timestamptz, timestamptz) from public, anon;
+grant execute on function public.create_course_round(uuid, text, timestamptz, timestamptz) to authenticated;
+
+-- course_summary: เพิ่มเวลาจบของรอบ (ใช้ในใบลงชื่อ)
+create or replace function public.course_summary(p_course uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses;
+begin
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์ดูงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  return coalesce((select jsonb_agg(jsonb_build_object(
+      'id', t.id, 'code', t.code, 'label', coalesce(t.round_label, t.title), 'round_no', t.round_no,
+      'starts_at', t.starts_at, 'ends_at', t.ends_at, 'seats', public.round_seats(t),
+      'booking_closed', t.booking_closed, 'bookable', public.round_bookable(t, c),
+      'open', jsonb_build_object('checkin', t.checkin_open, 'pre', t.pre_open, 'post', t.post_open, 'finish', t.finish_open),
+      'booked',  (select count(*) from bookings b where b.training_id = t.id),
+      'checkin', (select count(*) from attendance a where a.training_id = t.id and a.checkin_at is not null),
+      'walk_in', (select count(*) from attendance a where a.training_id = t.id and a.walk_in and a.checkin_at is not null),
+      'pre',     (select count(distinct public.roster_norm(emp_id)) from test_submissions s where s.training_id = t.id and s.phase = 'pre'),
+      'passed',  (select count(distinct public.roster_norm(emp_id)) from test_submissions s where s.training_id = t.id and s.phase = 'post'
+                    and s.score * 100 >= t.pass_percent * t.total),
+      'survey',  (select count(*) from survey_done d where d.training_id = t.id),
+      'finish',  (select count(*) from attendance a where a.training_id = t.id and a.finish_at is not null))
+    order by t.round_no nulls last, t.starts_at, t.created_at)
+    from trainings t where t.course_id = p_course), '[]'::jsonb);
+end $$;
+revoke execute on function public.course_summary(uuid) from public, anon;
+grant execute on function public.course_summary(uuid) to authenticated;
