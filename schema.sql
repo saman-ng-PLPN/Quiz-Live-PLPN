@@ -2706,6 +2706,7 @@ end $$;
 revoke execute on function public.course_lookup(text, text) from public;
 grant execute on function public.course_lookup(text, text) to anon, authenticated;
 
+
 -- =====================================================================
 -- 20) v14.4: แท็บผู้เข้าร่วม (ผู้จัดเพิ่ม/แก้/จองแทน/ย้ายรอบ/ยกเลิก)
 --            + ลิงก์ลงชื่อย้อนหลัง (ลืมลงชื่อ) + ข้อมูลจากระบบเดิม

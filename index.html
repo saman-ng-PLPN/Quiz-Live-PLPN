@@ -3046,7 +3046,8 @@ const Course = {
       quiz_id: 'ชุดคำถาม', survey_id: 'แบบประเมิน', pass_percent: 'เกณฑ์ผ่าน', hospitals: 'โรงพยาบาล', departments: 'แผนก', finish_pin_enabled: 'ใช้ PIN', finish_pin: 'PIN',
       roster_source: 'รายชื่อ', cohosts: 'ผู้จัดร่วม', checkin_open: 'ลงชื่อเข้า', finish_open: 'ลงชื่อจบ', pre_open: 'Pre-test', post_open: 'Post-test', booking_closed: 'ปิดจองรุ่นนี้',
       late_until: 'ลิงก์ย้อนหลังถึง', starts_at: 'เริ่ม', ends_at: 'จบ', round_label: 'ชื่อรุ่น', retake: 'สอบซ้ำ', shuffle: 'สลับข้อ' };
-    const val = (k, v) => v == null ? '–' : typeof v === 'boolean' ? (k === 'booking_closed' ? (v ? 'ปิด' : 'เปิด') : v ? 'เปิด' : 'ปิด')
+    const nm = Object.fromEntries([...this.quizzes, ...this.surveys].map(x => [x.id, x.title]));
+    const val = (k, v) => v == null ? '–' : (k === 'quiz_id' || k === 'survey_id') ? (nm[v] || 'ชุดของผู้อื่น') : typeof v === 'boolean' ? (k === 'booking_closed' ? (v ? 'ปิด' : 'เปิด') : v ? 'เปิด' : 'ปิด')
       : Array.isArray(v) ? (v.length > 4 ? v.length + ' รายการ' : v.join(', ') || '–') : typeof v === 'object' ? Object.keys(v).filter(x => v[x]).map(x => SHORT[x] || x).join(' ') || '–'
       : /_at$|_until$/.test(k) && v ? thDate(v) + ' ' + thTime(v) : String(v);
     const desc = l => { const d = l.detail || {};
@@ -3164,6 +3165,7 @@ const Course = {
       <div class="ccol">
         <section class="tcard"><h3>แบบทดสอบ</h3>
           <div class="fld"><label for="c-quiz">ชุดคำถาม Pre/Post *</label><select class="inp" id="c-quiz"><option value="">— เลือกชุดคำถาม —</option>
+            ${c.quiz_id && !quizzes.some(q => q.id === c.quiz_id) ? `<option value="${c.quiz_id}" selected>(ชุดคำถามที่ผูกไว้ · ของเจ้าของงาน)</option>` : ''}
             ${quizzes.map(q => `<option value="${q.id}" ${q.id === c.quiz_id ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
             <p class="hint">คำถามถูกคัดลอกไว้ในแต่ละรุ่นตอนสร้างรุ่น · เปลี่ยนชุดภายหลังมีผลกับรุ่นที่สร้างใหม่เท่านั้น</p></div>
           <div class="fld"><label for="c-pass">เกณฑ์ผ่าน Post-test (%)</label><input class="inp" id="c-pass" type="number" min="0" max="100" value="${c.pass_percent}" style="max-width:120px"></div>
@@ -3171,6 +3173,7 @@ const Course = {
         </section>
         <section class="tcard"><h3>แบบประเมิน</h3>
           <select class="inp" id="c-sv" aria-label="แบบประเมิน"><option value="">— ไม่มีแบบประเมิน —</option>
+            ${c.survey_id && !this.surveys.some(s => s.id === c.survey_id) ? `<option value="${c.survey_id}" selected>(แบบประเมินที่ผูกไว้ · ของเจ้าของงาน)</option>` : ''}
             ${this.surveys.map(s => `<option value="${s.id}" ${s.id === c.survey_id ? 'selected' : ''}>${esc(s.title)}</option>`).join('')}</select>
           <p class="hint">ไม่ระบุตัวตน · ขึ้นหลังผ่าน Post-test${c.survey_id ? ` · <a href="#survey/${c.survey_id}">แก้ข้อคำถาม ›</a>` : ''}</p>
         </section>
