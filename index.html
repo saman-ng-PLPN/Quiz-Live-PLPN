@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600;700;800&family=Prompt:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="config.js"></script>
 <script src="avatars.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -24,7 +24,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{font-family:'Prompt',system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--paper);color:var(--ink);
+body{font-family:'Kanit','Prompt',system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--paper);color:var(--ink);
   -webkit-font-smoothing:antialiased;min-height:100dvh;line-height:1.45}
 button,input,textarea,select{font:inherit;color:inherit}
 button{cursor:pointer}
@@ -473,6 +473,51 @@ body.stage{background:radial-gradient(1200px 700px at 85% -10%, #21506f 0%, tran
   .lobby{grid-template-columns:1fr}
   .tiles{grid-template-columns:1fr}
 }
+
+/* ---------- v14 ธีมขาว-ฟ้า-น้ำเงิน (หน้าผู้จัด / แบบทดสอบ / จอง / ลงทะเบียน) · หน้าเกมคงกรมท่า-เหลือง ---------- */
+body.admin, body.test{--paper:#f4f7fb; --line:#dbe4f0; --navy:#1e3a8a; --navy2:#1d4ed8; --navy3:#2563eb;
+  --sun:#2563eb; --sun2:#93c5fd; --blue:#2563eb; --blue-soft:#eff6ff; --blue-line:#bfdbfe}
+body.admin{background:var(--paper)}
+body.test{background:#eef3fa}
+body.admin .brand span, body.test .brand span{color:#93c5fd}
+body.admin .btn.sun, body.test .btn.sun{background:#2563eb;color:#fff}
+body.admin .btn.sun:hover, body.test .btn.sun:hover{background:#1d4ed8}
+body.admin .tabs{background:#e6edf7}
+body.admin .live{background:var(--blue-soft);border-color:var(--blue-line)}
+body.admin .live .it + .it{border-top-color:var(--blue-line)}
+body.admin .dept{background:#e0ecff;color:#1e40af}
+body.admin .topbar{background:#1e3a8a}
+body.admin .savebar{background:rgba(244,247,251,.94)}
+/* v14 หน้าแรก/งานอบรม */
+.secnav{display:flex;gap:4px;align-items:center;border-bottom:2px solid var(--line);flex-wrap:wrap}
+.secnav button{border:0;background:none;padding:10px 16px;font-size:17px;font-weight:500;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px}
+.secnav button.on{color:var(--ink);font-weight:600;border-bottom-color:#2563eb}
+.secnav.sm{margin-top:14px}.secnav.sm button{font-size:15px}
+.secnav .btn{margin-bottom:8px}
+.cnt{font-size:12px;background:#e6edf7;color:#1e40af;border-radius:99px;padding:1px 8px;font-weight:600}
+.ccard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;gap:14px;margin-top:16px;text-decoration:none;color:inherit}
+.ccard h3{margin:0;font-size:20px;line-height:1.3}
+.ccard .meta{font-size:14px;color:var(--muted)}
+.ccard.newc{border:2px dashed var(--line);gap:4px;color:var(--muted)}.ccard.newc b{color:var(--ink)}
+.cico{width:60px;height:60px;border-radius:14px;background:#1e3a8a;color:#fff;display:grid;place-items:center;font-size:22px;font-weight:700;flex-shrink:0}
+.chip{font-size:12px;font-weight:600;padding:2px 10px;border-radius:99px;background:#e0ecff;color:#1e40af}
+.steps6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.steps6 .st{background:#f4f7fb;border-radius:12px;padding:10px 12px;display:grid;gap:1px;min-width:0}
+.steps6 .st small{font-size:12px;color:var(--muted)}
+.steps6 .st b{font-size:24px;font-variant-numeric:tabular-nums;line-height:1.2}
+.steps6 .st em{font-style:normal;font-size:12px;color:var(--muted)}
+.steps6 .st.off{opacity:.45}
+@media (max-width:700px){.steps6{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.nextr{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe}
+table.crep td{vertical-align:middle}
+table.crep i.bar{display:block;height:5px;border-radius:99px;background:#e6edf7;margin-top:4px;min-width:60px}
+table.crep i.bar i{display:block;height:5px;border-radius:99px;background:#2563eb}
+table.crep tr.tot td{background:#f6f8fa}
+.cgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px;align-items:start}
+@media (max-width:760px){.cgrid{grid-template-columns:1fr}}
+.cgrid .tcard h3{margin:0;font-size:16px}
+.frm2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.dbox{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:grid;gap:4px;font-size:14px}
 </style>
 </head>
 <body>
@@ -544,6 +589,7 @@ function route() {
   if (page === 'play') return Admin.playPage(arg);
   if (page === 'host') return Host.open(arg);
   if (page === 'training') return Training.open(arg);
+  if (page === 'course') return Course.open(arg);
   if (page === 'report') return Report.open(arg);
   if (page === 'newtraining') return NewTraining.open(arg);
   if (page === 'survey') return SurveyAdmin.open(arg);
@@ -901,9 +947,13 @@ const Admin = {
     ]);
     if (qz.error) { toast(errMsg(qz.error), true); return; }
     this.isAdmin = adm.data === true;
-    const tr = await sb.from('trainings').select('id,title,code,pre_open,post_open,created_at,owner_id,owner_email,series,series_id,round_label,round_no')
+    const tr = await sb.from('trainings').select('id,title,code,pre_open,post_open,created_at,owner_id,owner_email,series,series_id,round_label,round_no,course_id,survey_id')
       .order('created_at', { ascending: false }).limit(150);
     this.trainings = tr.data || [];
+    const cs = await sb.from('courses').select('*').order('created_at', { ascending: false });
+    this.courses = cs.error ? [] : (cs.data || []);
+    this.sums = {}; try { this.hospitals = await rpc('list_hospitals'); } catch (e) { this.hospitals = []; }
+    await Promise.all(this.courses.map(async c => { try { this.sums[c.id] = await rpc('course_summary', { p_course: c.id }); } catch (e) { this.sums[c.id] = []; } }));
     const svs = await sb.from('surveys').select('id,title,code,open,shared,owner_id,owner_email').order('updated_at', { ascending: false });
     this.surveys = svs.data || [];
     this.quizzes = qz.data || [];
@@ -927,66 +977,92 @@ const Admin = {
       ${!t.series_id && t.owner_id !== u.id ? `<span class="hint">· ${esc(t.owner_email)}</span>` : ''}</span>
       <a class="btn sm" href="#training/${t.id}">จัดการ / ดูผล</a></div>`;
   },
+  // หน้าแรกผู้จัด: 3 หมวด — งานอบรม · ชุดคำถามและเกม · แบบประเมิน
   renderList() {
     const u = this.user;
+    this.sec = this.sec || load('quizlive.sec') || 'course';
     const liveHTML = this.live.length ? `<div class="live"><b>ห้องที่ยังเปิดอยู่</b>${this.live.map(s => `
       <div class="it"><span class="grow">${s.training_id ? '📝 Pre-test · ' : ''}${esc(s.title)} · PIN <b>${esc(s.pin)}</b></span>
         <a class="btn sm" href="#host/${s.id}">กลับไปที่ห้อง</a>
         <button class="btn danger sm" data-close="${s.id}">ปิดห้อง</button></div>`).join('')}</div>` : '';
+    const nC = this.courses.length, nQ = this.quizzes.filter(q => q.owner_id === u.id || (q.editors || []).includes((u.email || '').toLowerCase())).length;
+    const secs = [['course', 'งานอบรม', nC], ['quiz', 'ชุดคำถามและเกม', nQ], ['survey', 'แบบประเมิน', this.surveys.length]];
+    const action = { course: '<a class="btn sun" href="#course/new">+ สร้างงานอบรม</a>',
+                     quiz: '<a class="btn sun" href="#edit/new">+ สร้างชุดคำถามใหม่</a>',
+                     survey: '<button class="btn sun" id="newsv">+ สร้างแบบประเมิน</button>' }[this.sec];
     app.innerHTML = adminShell(u, `
-      <div class="row"><h2 class="sec grow">ชุดคำถาม</h2>
-        <a class="btn sun" href="#edit/new">+ สร้างชุดคำถามใหม่</a></div>
+      <nav class="secnav" aria-label="หมวดหลัก">${secs.map(([k, t, n]) =>
+        `<button data-sec="${k}" class="${this.sec === k ? 'on' : ''}">${t}${n ? ` <span class="cnt">${n}</span>` : ''}</button>`).join('')}
+        <span class="grow"></span>${action}</nav>
       ${liveHTML}
-      ${this.trainings.length ? `<div class="live" style="background:#eef6ff;border-color:#c9def5"><div class="row"><b class="grow">📝 รอบ Pre/Post Test</b>
-          <a class="btn light sm" href="#report/">📊 รายงานรวมหลายรอบ</a></div>${this.trainingGroups().map(g => g.single ? this.trainingRow(g.single, u) : `
-        <details class="it" style="border-color:#c9def5;display:block"><summary style="cursor:pointer;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <span class="grow">📚 <b>${esc(g.series)}</b> · ${g.items.length} รุ่น
-            ${g.items.some(t => t.pre_open || t.post_open) ? `<span class="phase open">เปิดรับ ${g.items.filter(t => t.pre_open || t.post_open).length} รุ่น</span>` : ''}
-            ${g.items[0].owner_id !== u.id ? `<span class="hint">· ${esc(g.items[0].owner_email)}</span>` : ''}</span>
-          <a class="btn sm" href="#report/s=${g.sid}">ทุกรุ่น / รายงานรวม</a></summary>
-          <div style="padding-left:18px">${g.items.map(t => this.trainingRow(t, u)).join('')}</div></details>`).join('')}</div>` : ''}
-      <div class="row" style="margin-top:16px">
-        <div class="tabs"><button data-tab="mine">ของฉัน</button><button data-tab="all">${this.isAdmin ? 'ของคนอื่นทั้งหมด (ผู้ดูแล)' : 'แชร์จากทุกแผนก'}</button></div>
-        <span class="grow"></span>
-        <input class="search" id="q" placeholder="ค้นหาชื่อเกม / แผนก" value="${esc(this.q)}"></div>
-      <div id="cards"></div>
-      <div class="row" style="margin-top:28px"><h2 class="sec grow">📋 แบบประเมิน</h2><button class="btn light" id="newsv">+ สร้างแบบประเมิน</button></div>
-      ${this.surveys.length ? `<div class="live" style="background:#fff;border-color:var(--line)">${this.surveys.map(sv => `
-        <div class="it" style="border-color:var(--line)"><span class="grow">${esc(sv.title)}
-          ${sv.open ? '<span class="phase open">เปิดรับแบบเดี่ยว</span>' : ''}${sv.shared ? '<span class="vis shared">👥 แชร์</span>' : ''}
-          ${sv.owner_id !== u.id ? `<span class="hint">· ${esc(sv.owner_email)}</span>` : ''}</span>
-          <a class="btn sm light" href="#survey/${sv.id}">แก้ไข / ดูผล</a></div>`).join('')}</div>`
-        : '<p class="hint">ยังไม่มีแบบประเมิน · สร้างแล้วนำไปผูกกับรอบ Pre/Post Test หรือใช้แบบเดี่ยวได้</p>'}
-      ${this.isAdmin ? `<details class="adminbox" id="admbox"><summary>⚙ ผู้ดูแลระบบ</summary>
-        <p class="hint">ผู้ดูแลระบบเห็น แก้ไข และลบได้ทุกชุดคำถาม รวมถึงชุดส่วนตัว</p>
+      <div id="secbody">${this.sec === 'course' ? this.courseSecHTML() : this.sec === 'quiz' ? this.quizSecHTML() : this.surveySecHTML()}</div>
+      ${this.isAdmin ? `<details class="adminbox" id="admbox"><summary>⚙ ผู้ดูแลระบบ — ผู้ดูแล · รายชื่อแผนก · รายชื่อโรงพยาบาล (ใช้ร่วมทุกงาน)</summary>
+        <p class="hint">ผู้ดูแลระบบเห็น แก้ไข และลบได้ทุกชุดคำถามและทุกงานอบรม</p>
         <div id="admlist"></div>
         <form class="row" id="admform" style="padding:10px 0 14px">
           <input class="inp grow" id="admemail" type="email" placeholder="อีเมล @${esc(CFG.ALLOWED_DOMAIN || '')}" style="min-width:0">
           <button class="btn sm">+ เพิ่ม</button></form>
         <div style="border-top:1px solid var(--line);padding:12px 0 16px;display:grid;gap:8px">
-          <b>รายชื่อแผนก (ใช้ในแบบทดสอบ Pre/Post)</b>
+          <b>รายชื่อแผนก</b>
           <p class="hint">พิมพ์ 1 แผนกต่อ 1 บรรทัด เรียงตามลำดับที่ต้องการแสดง</p>
           <textarea class="inp" id="deptlist" rows="8" placeholder="เช่น&#10;ห้องฉุกเฉิน (ER)&#10;ผู้ป่วยนอก (OPD)&#10;เทคโนโลยีสารสนเทศ (IT)"></textarea>
           <div class="row"><span class="hint grow" id="deptcount"></span><button class="btn sm" id="deptsave">บันทึกรายชื่อแผนก</button></div>
         </div>
         <div style="border-top:1px solid var(--line);padding:12px 0 16px;display:grid;gap:8px">
-          <b>รายชื่อโรงพยาบาล (ใช้ในแบบทดสอบ Pre/Post)</b>
+          <b>รายชื่อโรงพยาบาล</b>
           <p class="hint">1 โรงพยาบาลต่อ 1 บรรทัด · ถ้าว่าง ระบบจะไม่ถามโรงพยาบาล</p>
           <textarea class="inp" id="hosplist" rows="3"></textarea>
           <div class="row"><span class="grow"></span><button class="btn sm" id="hospsave">บันทึกรายชื่อโรงพยาบาล</button></div>
         </div></details>` : ''}`);
     bindShell();
     if (this.isAdmin) this.bindAdmins();
-    $('#newsv').onclick = () => SurveyAdmin.create();
-    $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === this.tab);
-      b.onclick = () => { this.tab = b.dataset.tab; this.renderList(); }; });
-    $('#q').oninput = e => { this.q = e.target.value; this.renderCards(); };
+    $$('[data-sec]').forEach(b => b.onclick = () => { this.sec = b.dataset.sec; save('quizlive.sec', this.sec); this.renderList(); });
     $$('[data-close]').forEach(b => b.onclick = async () => {
       const pre = this.live.some(s => s.id === b.dataset.close && s.training_id);
       if (!confirm(pre ? 'ปิดห้องนี้? ผลที่ตอบแล้วจะบันทึกเป็น Pre-test' : 'ปิดห้องนี้? ผู้เล่นจะเห็นว่าจบเกม')) return;
       try { await rpc('host_end', { p_session: b.dataset.close }); this.list(); } catch (e) { toast(errMsg(e), true); }
     });
-    this.renderCards();
+    if (this.sec === 'quiz') {
+      $$('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === this.tab);
+        b.onclick = () => { this.tab = b.dataset.tab; this.renderList(); }; });
+      $('#q').oninput = e => { this.q = e.target.value; this.renderCards(); };
+      this.renderCards();
+    }
+    if (this.sec === 'survey') $('#newsv').onclick = () => SurveyAdmin.create();
+  },
+  courseSecHTML() {
+    const u = this.user;
+    const cards = this.courses.map(c => courseCardHTML(c, this.sums[c.id] || [], this.hospitals)).join('');
+    const loose = this.trainingGroups().filter(g => !(g.single ? g.single.course_id : g.items[0].course_id));
+    const looseHTML = loose.length ? `<details class="live" style="background:#fff;border-color:var(--line)" ${this.courses.length ? '' : 'open'}>
+        <summary style="cursor:pointer;font-weight:600">รอบ Pre/Post ที่ยังไม่อยู่ในงานอบรม (${loose.reduce((n, g) => n + (g.single ? 1 : g.items.length), 0)})</summary>
+        <p class="hint" style="margin:6px 0">รอบที่สร้างแบบเดิม ยังเปิดใช้และดูผลได้ตามปกติ</p>
+        ${loose.map(g => g.single ? this.trainingRow(g.single, u) : `
+        <details class="it" style="border-color:#c9def5;display:block"><summary style="cursor:pointer;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span class="grow">📚 <b>${esc(g.series)}</b> · ${g.items.length} รุ่น</span>
+          <a class="btn sm" href="#report/s=${g.sid}">ทุกรุ่น / รายงานรวม</a></summary>
+          <div style="padding-left:18px">${g.items.map(t => this.trainingRow(t, u)).join('')}</div></details>`).join('')}</details>` : '';
+    return (cards || `<div class="empty">ยังไม่มีงานอบรม · กด “สร้างงานอบรม” แล้วตั้งค่าหลักสูตร รุ่น ชุดคำถาม และแบบประเมินในที่เดียว</div>`)
+      + `<a class="ccard newc" href="#course/new"><b>สร้างงานอบรมใหม่</b>
+          <span>ตั้งชื่อหลักสูตร → เลือก รพ. → เลือกชุดคำถาม Pre/Post และแบบประเมิน → เพิ่มรุ่นและที่นั่ง → ได้ QR ของแต่ละรุ่น</span></a>` + looseHTML;
+  },
+  quizSecHTML() {
+    return `<div class="row" style="margin-top:16px">
+        <div class="tabs"><button data-tab="mine">ของฉัน</button><button data-tab="all">${this.isAdmin ? 'ของคนอื่นทั้งหมด (ผู้ดูแล)' : 'แชร์จากทุกแผนก'}</button></div>
+        <span class="grow"></span>
+        <input class="search" id="q" placeholder="ค้นหาชื่อเกม / แผนก" value="${esc(this.q)}"></div>
+      <div id="cards"></div>`;
+  },
+  surveySecHTML() {
+    const u = this.user;
+    const used = new Set([...this.trainings.map(t => t.survey_id), ...this.courses.map(c => c.survey_id)].filter(Boolean));
+    return this.surveys.length ? `<div class="live" style="background:#fff;border-color:var(--line)">${this.surveys.map(sv => `
+        <div class="it" style="border-color:var(--line)"><span class="grow">${esc(sv.title)}
+          ${used.has(sv.id) ? '<span class="phase pre">ใช้ในงานอบรม</span>' : ''}
+          ${sv.open ? '<span class="phase open">เปิดรับแบบเดี่ยว</span>' : ''}${sv.shared ? '<span class="vis shared">👥 แชร์</span>' : ''}
+          ${sv.owner_id !== u.id ? `<span class="hint">· ${esc(sv.owner_email)}</span>` : ''}</span>
+          <a class="btn sm light" href="#survey/${sv.id}">แก้ไข / ดูผล</a></div>`).join('')}</div>`
+      : '<div class="empty">ยังไม่มีแบบประเมิน · สร้างแล้วเลือกใช้ในงานอบรม หรือเปิดรับแบบเดี่ยวด้วยลิงก์/QR ของตัวเองได้</div>';
   },
   renderCards() {
     const u = this.user, k = this.q.trim().toLowerCase(), me = (u.email || '').toLowerCase();
@@ -2652,6 +2728,277 @@ const NewTraining = {
 // =====================================================================
 // รายงานรวมหลายรอบ — เลือกทั้งชุดหรือเลือกรอบเอง · กรองดูทีละรอบได้   ลิงก์: #report/s=<ชุด> หรือ #report/ids=a,b
 // =====================================================================
+// =====================================================================
+// v14: งานอบรม — จอง → ลงทะเบียนเข้า → Pre → Post → ประเมิน → ลงชื่อจบ
+// =====================================================================
+const STEPS = [['booking', 'จอง'], ['checkin', 'ลงทะเบียนเข้า'], ['pre', 'Pre-test'], ['post', 'Post-test ผ่าน'], ['survey', 'ประเมิน'], ['finish', 'ลงชื่อจบ']];
+const SHORT = { booking: 'จอง', checkin: 'เข้า', pre: 'Pre', post: 'ผ่าน', survey: 'ประเมิน', finish: 'จบ' };
+const STEP_KEY = { booking: 'booked', checkin: 'checkin', pre: 'pre', post: 'passed', survey: 'survey', finish: 'finish' };
+const stepOn = (c, k) => !c.steps || c.steps[k] !== false;
+const thDate = (d, o) => d ? new Date(d).toLocaleDateString('th-TH', Object.assign({ day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' }, o || {})) : '';
+const thTime = d => d ? new Date(d).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : '';
+function courseRange(rows) {
+  const d = rows.map(r => r.starts_at).filter(Boolean).sort();
+  if (!d.length) return '';
+  const a = thDate(d[0]), b = thDate(d[d.length - 1], { year: '2-digit' });
+  return a === thDate(d[d.length - 1]) ? b : `${a} – ${b}`;
+}
+function courseTotals(c, rows) {
+  const t = {}; STEPS.forEach(([k]) => t[k] = rows.reduce((n, r) => n + (r[STEP_KEY[k]] || 0), 0));
+  t.seats = rows.reduce((n, r) => n + (r.seats || 0), 0);
+  return t;
+}
+function stepTilesHTML(c, rows) {
+  const t = courseTotals(c, rows);
+  return `<div class="steps6">${STEPS.map(([k, name], i) => `<div class="st ${stepOn(c, k) ? '' : 'off'}">
+      <small>${i + 1} ${name}</small><b>${stepOn(c, k) ? t[k] : '–'}</b>
+      <em>${!stepOn(c, k) ? 'ไม่ใช้ในงานนี้' : k === 'booking' && t.seats ? `จาก ${t.seats} ที่นั่ง` : 'คน'}</em></div>`).join('')}</div>`;
+}
+function courseInitials(t) {
+  const w = String(t || '?').replace(/^(อบรม|หลักสูตร|งาน)\s*/, '').split(/\s+/).filter(x => /^[A-Za-z]/.test(x));
+  return w.length >= 2 ? (w[0][0] + w[1][0]).toUpperCase() : [...String(t || '?').replace(/^(อบรม|หลักสูตร|งาน)\s*/, '')][0] || '?';
+}
+function courseCardHTML(c, rows, allHosp) {
+  const now = Date.now(), next = rows.find(r => r.starts_at && new Date(r.starts_at).getTime() + 3 * 3600e3 > now);
+  const openNow = rows.filter(r => Object.values(r.open || {}).some(Boolean));
+  const hosp = Array.isArray(c.hospitals) ? c.hospitals : (allHosp || []);
+  return `<article class="ccard">
+    <div class="row" style="align-items:flex-start">
+      <div class="cico">${esc(courseInitials(c.title))}</div>
+      <div class="grow" style="display:grid;gap:4px;min-width:0">
+        <h3>${esc(c.title)}</h3>
+        <div class="meta">${[courseRange(rows), rows.length ? rows.length + ' รุ่น' : 'ยังไม่มีรุ่น', c.seats ? `รุ่นละ ${c.seats} ที่นั่ง` : '', c.location].filter(Boolean).map(esc).join(' · ')}</div>
+        <div class="row" style="gap:6px">${hosp.map(h => `<span class="chip">${esc(h)}</span>`).join('')}
+          ${openNow.length ? `<span class="phase open">กำลังเปิด ${openNow.length} รุ่น</span>` : ''}</div>
+      </div>
+      <a class="btn sm" href="#course/${c.id}">จัดการงานอบรม ›</a>
+    </div>
+    ${stepTilesHTML(c, rows)}
+    ${next ? `<div class="nextr"><span class="grow">รุ่นถัดไป: <b>${esc(next.label)}</b>${stepOn(c, 'booking') ? ` · จองแล้ว ${next.booked}${next.seats ? '/' + next.seats : ''}` : ''}</span>
+      <a class="btn sm light" href="#training/${next.id}">เปิดหน้ารุ่น ›</a></div>` : ''}
+  </article>`;
+}
+
+const Course = {
+  async open(arg) {
+    setBody('admin');
+    const user = await requireStaff(); if (!user) return;
+    this.user = user;
+    const [id, tab] = (arg || '').split(':');
+    app.innerHTML = adminShell(user, `<div class="center-msg" style="min-height:40vh"><div class="spinner"></div></div>`); bindShell();
+    const [adm, qz, sv, hosp, dept] = await Promise.all([sb.rpc('is_admin'),
+      sb.from('quizzes').select('id,title,owner_id,shared,editors,questions(count)').order('updated_at', { ascending: false }),
+      sb.from('surveys').select('id,title,owner_id,shared').order('updated_at', { ascending: false }),
+      sb.rpc('list_hospitals'), sb.rpc('list_departments')]);
+    this.isAdmin = adm.data === true; this.quizzes = qz.data || []; this.surveys = sv.data || [];
+    this.hospitals = hosp.data || []; this.depts = dept.data || [];
+    if (id === 'new') { this.c = { id: null, title: '', cert_title: '', location: '', seats: 0, hospitals: null, departments: null,
+        steps: { booking: true, checkin: true, pre: true, post: true, survey: true, finish: true }, booking_open: false, booking_close_days: 1,
+        quiz_id: null, survey_id: null, pass_percent: 80, finish_pin_enabled: true, finish_pin: String(Math.floor(1000 + Math.random() * 9000)),
+        roster_source: null, cohosts: [], owner_id: user.id };
+      this.rows = []; this.tab = 'settings'; return this.render(); }
+    const { data: c, error } = await sb.from('courses').select('*').eq('id', id).maybeSingle();
+    if (error || !c) { toast(error ? errMsg(error) : 'ไม่พบงานอบรมนี้ หรือไม่มีสิทธิ์', true); location.hash = '#admin'; return; }
+    this.c = c; this.tab = tab || 'rounds';
+    await this.loadRows(); this.render();
+    const poll = setInterval(async () => { if (this.tab !== 'rounds') return; await this.loadRows(); this.renderBody(); }, 20000);
+    onLeave(() => clearInterval(poll));
+  },
+  async loadRows() { try { this.rows = await rpc('course_summary', { p_course: this.c.id }); } catch (e) { toast(errMsg(e), true); this.rows = this.rows || []; } },
+  canOwn() { return this.c.owner_id === this.user.id || this.isAdmin; },
+  render() {
+    const c = this.c, isNew = !c.id;
+    const tabs = isNew ? [] : [['rounds', `รุ่น <span class="cnt">${this.rows.length}</span>`], ['report', 'รายงานรวม'], ['settings', 'ตั้งค่า']];
+    app.innerHTML = adminShell(this.user, `
+      <div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a>
+        <div class="grow" style="min-width:0"><h2 class="sec">${isNew ? 'สร้างงานอบรมใหม่' : esc(c.title)}</h2>
+          ${isNew ? '' : `<div class="hint">${[courseRange(this.rows), (Array.isArray(c.hospitals) ? c.hospitals : this.hospitals).join(', '),
+            this.rows.length ? `${this.rows.length} รุ่น${c.seats ? ' × ' + c.seats + ' ที่นั่ง' : ''}` : ''].filter(Boolean).map(esc).join(' · ')}</div>`}</div></div>
+      ${tabs.length ? `<nav class="secnav sm" aria-label="ส่วนของงานอบรม">${tabs.map(([k, t]) =>
+        `<button data-ctab="${k}" class="${this.tab === k ? 'on' : ''}">${t}</button>`).join('')}</nav>` : ''}
+      <div id="cbody"></div>`);
+    bindShell();
+    $$('[data-ctab]').forEach(b => b.onclick = () => {
+      if (b.dataset.ctab === 'report') { location.hash = '#report/ids=' + this.rows.map(r => r.id).join(','); return; }
+      this.tab = b.dataset.ctab; history.replaceState(null, '', '#course/' + c.id + ':' + this.tab); this.render(); });
+    this.renderBody();
+  },
+  renderBody() {
+    const box = $('#cbody'); if (!box) return;
+    if (this.tab === 'settings') return this.renderSettings(box);
+    const c = this.c, rows = this.rows;
+    const used = STEPS.filter(([k]) => stepOn(c, k));
+    const cell = (r, k) => { const v = r[STEP_KEY[k]] || 0;
+      return k === 'booking' ? `<span>${v}${r.seats ? ' / ' + r.seats : ''}</span>${r.seats ? `<i class="bar"><i style="width:${Math.min(100, Math.round(v / r.seats * 100))}%"></i></i>` : ''}` : v; };
+    const tot = courseTotals(c, rows);
+    const state = r => { const o = r.open || {}, on = ['checkin', 'pre', 'post', 'finish'].filter(k => o[k]);
+      if (on.length) return `<span class="phase open">เปิด ${on.map(k => ({ checkin: 'ลงทะเบียน', pre: 'Pre', post: 'Post', finish: 'ลงชื่อจบ' })[k]).join(' · ')}</span>`;
+      const end = r.starts_at && new Date(r.starts_at).getTime() + 3 * 3600e3 < Date.now();
+      return `<span class="phase">${end ? 'อบรมแล้ว' : 'รอวันอบรม'}</span>`; };
+    box.innerHTML = `
+      <div class="tcard">${stepTilesHTML(c, rows)}</div>
+      <p class="hint" style="margin:14px 0 8px">ตัวเลข = จำนวนคนที่ผ่านขั้นนั้นแล้ว อ่านซ้ายไปขวาตามเส้นทางของผู้เข้าอบรม · กด “เปิดรุ่น” เพื่อคุมวันอบรม (เปิด-ปิดขั้น QR เกม Pre-test รายงาน)</p>
+      ${rows.length ? `<div class="tblwrap"><table class="rep crep"><thead><tr><th>รุ่น</th><th>วันเวลา</th>
+          ${used.map(([k]) => `<th class="num">${STEPS.findIndex(s => s[0] === k) + 1} ${SHORT[k]}</th>`).join('')}<th>สถานะ</th><th></th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td style="white-space:normal;min-width:150px"><b>${esc(r.label)}</b><div class="hint">รหัส ${esc(r.code)}</div></td>
+          <td>${r.starts_at ? `${thDate(r.starts_at)} ${thTime(r.starts_at)}` : '<span class="hint">ยังไม่ระบุ</span>'}</td>
+          ${used.map(([k]) => `<td class="num">${cell(r, k)}</td>`).join('')}
+          <td>${state(r)}</td><td><a class="btn sm" href="#training/${r.id}">เปิดรุ่น</a></td></tr>`).join('')}
+          <tr class="tot"><td><b>รวม</b></td><td></td>${used.map(([k]) => `<td class="num"><b>${tot[k]}${k === 'booking' && tot.seats ? ' / ' + tot.seats : ''}</b></td>`).join('')}<td></td><td></td></tr>
+        </tbody></table></div>` : '<div class="empty">ยังไม่มีรุ่น · เพิ่มรุ่นแรกได้ด้านล่าง</div>'}
+      ${this.addRoundHTML()}`;
+    this.bindAddRound();
+  },
+  addRoundHTML() {
+    const c = this.c;
+    if (!c.quiz_id) return `<div class="notice">ยังไม่ได้เลือกชุดคำถาม Pre/Post · ไปที่แท็บ <b>ตั้งค่า</b> ก่อน แล้วค่อยเพิ่มรุ่น</div>`;
+    return `<details class="tcard" id="addr"><summary style="cursor:pointer;font-weight:600">+ เพิ่มรุ่น</summary>
+      <div class="frm2">
+        <div class="fld"><label for="ar-label">ชื่อรุ่น</label><input class="inp" id="ar-label" placeholder="เช่น รุ่น ${this.rows.length + 1}" value="รุ่น ${this.rows.length + 1}"></div>
+        <div class="fld"><label for="ar-date">วันที่</label><input class="inp" id="ar-date" type="date"></div>
+        <div class="fld"><label for="ar-s">เวลาเริ่ม</label><input class="inp" id="ar-s" type="time" value="10:00"></div>
+        <div class="fld"><label for="ar-e">เวลาจบ</label><input class="inp" id="ar-e" type="time" value="12:00"></div>
+        <div class="fld"><label for="ar-n">จำนวนรุ่นที่จะสร้าง</label><input class="inp" id="ar-n" type="number" min="1" max="20" value="1">
+          <p class="hint">มากกว่า 1 = สร้างต่อเนื่องวันละรุ่น (ชื่อรุ่นเลขรันต่อ)</p></div>
+      </div>
+      <div class="row"><span class="grow hint">ชุดคำถาม เกณฑ์ผ่าน แบบประเมิน แผนก และที่นั่ง ใช้ตามการตั้งค่าของงาน</span><button class="btn" id="ar-go">สร้างรุ่น</button></div></details>`;
+  },
+  bindAddRound() {
+    const go = $('#ar-go'); if (!go) return;
+    go.onclick = async () => {
+      const c = this.c, base = $('#ar-label').value.trim() || `รุ่น ${this.rows.length + 1}`, d = $('#ar-date').value,
+            s = $('#ar-s').value, e = $('#ar-e').value, n = Math.max(1, Math.min(20, +$('#ar-n').value || 1));
+      const m = base.match(/^(.*?)(\d+)\s*$/);
+      go.disabled = true;
+      try {
+        for (let i = 0; i < n; i++) {
+          const label = n > 1 && m ? m[1] + (+m[2] + i) : base;
+          let day = d ? new Date(d + 'T00:00:00+07:00') : null; if (day && i) day = new Date(day.getTime() + i * 864e5);
+          const ymd = day ? new Date(day.getTime() + 7 * 3600e3).toISOString().slice(0, 10) : null;
+          const at = t => ymd && t ? new Date(ymd + 'T' + t + ':00+07:00').toISOString() : null;
+          const r = await rpc('create_training', { p_quiz_id: c.quiz_id, p_title: `${c.title} · ${label}`, p_pass: c.pass_percent });
+          const { error } = await sb.from('trainings').update({ course_id: c.id, round_label: label, round_no: this.rows.length + i + 1,
+            series_id: c.id, series: c.title, starts_at: at(s), ends_at: at(e), survey_id: c.survey_id, departments: c.departments,
+            roster: c.roster_source, cohosts: c.cohosts || [] }).eq('id', r.id);
+          if (error) throw error;
+        }
+        toast(`สร้างแล้ว ${n} รุ่น`); await this.loadRows(); this.render();
+      } catch (er) { toast(errMsg(er), true); go.disabled = false; }
+    };
+  },
+  renderSettings(box) {
+    const c = this.c, own = !c.id || this.canOwn();
+    const hs = Array.isArray(c.hospitals) ? c.hospitals : this.hospitals, ds = Array.isArray(c.departments) ? c.departments : null;
+    const quizzes = this.quizzes.filter(q => (q.questions && q.questions[0] && q.questions[0].count) || q.id === c.quiz_id);
+    box.innerHTML = `<div class="cgrid">
+      <div class="ccol">
+        <section class="tcard"><h3>ข้อมูลหลักสูตร</h3>
+          <div class="fld"><label for="c-title">ชื่องาน (แสดงในระบบ) *</label><input class="inp" id="c-title" maxlength="200" value="${esc(c.title)}" placeholder="เช่น อบรม Code Gray 2569"></div>
+          <div class="fld"><label for="c-cert">ชื่อหลักสูตรเต็ม (หัวใบลงชื่อ)</label><textarea class="inp" id="c-cert" rows="2">${esc(c.cert_title)}</textarea></div>
+          <div class="frm2">
+            <div class="fld"><label for="c-loc">สถานที่</label><input class="inp" id="c-loc" value="${esc(c.location)}"></div>
+            <div class="fld"><label for="c-seat">ที่นั่งต่อรุ่น (0 = ไม่จำกัด)</label><input class="inp" id="c-seat" type="number" min="0" value="${c.seats || 0}"></div>
+          </div>
+        </section>
+        <section class="tcard"><h3>ขั้นตอนที่ใช้ในงานนี้</h3>
+          <p class="hint">ติ๊กเฉพาะขั้นที่ต้องการ งานเล็กอาจใช้แค่ Pre/Post</p>
+          ${STEPS.map(([k, n], i) => `<label class="switch"><input type="checkbox" data-step="${k}" ${stepOn(c, k) ? 'checked' : ''}> ${i + 1} ${n.replace(' ผ่าน', '')}</label>`).join('')}
+          <div class="row"><label class="switch"><input type="checkbox" id="c-bopen" ${c.booking_open ? 'checked' : ''}> เปิดรับจอง</label>
+            <span class="hint">ปิดรับก่อนวันอบรม</span><input class="inp" id="c-bclose" type="number" min="0" max="60" value="${c.booking_close_days}" style="width:70px"><span class="hint">วัน</span></div>
+          ${c.booking_code ? `<p class="hint">ลิงก์จอง: <b>${esc(location.origin + location.pathname)}?b=${esc(c.booking_code)}</b> (หน้าจองกำลังทำ)</p>` : ''}
+        </section>
+        <section class="tcard"><h3>ใบลงชื่อ</h3>
+          <label class="switch"><input type="checkbox" id="c-pinon" ${c.finish_pin_enabled ? 'checked' : ''}> ใช้ PIN ก่อนลงชื่อจบ</label>
+          <p class="hint">เปิด: ต้องใส่ PIN ที่ผู้สอบประกาศหลังสอบปฏิบัติ · ปิด: ลงชื่อจบได้ทันทีเมื่อผู้จัดเปิดขั้นนี้</p>
+          <div class="row"><input class="inp grow" id="c-pin" maxlength="8" value="${esc(c.finish_pin)}" style="max-width:160px;letter-spacing:.2em;font-weight:600">
+            <button class="btn light sm" id="c-pinr" type="button">สุ่มใหม่</button></div>
+        </section>
+      </div>
+      <div class="ccol">
+        <section class="tcard"><h3>แบบทดสอบ</h3>
+          <div class="fld"><label for="c-quiz">ชุดคำถาม Pre/Post *</label><select class="inp" id="c-quiz"><option value="">— เลือกชุดคำถาม —</option>
+            ${quizzes.map(q => `<option value="${q.id}" ${q.id === c.quiz_id ? 'selected' : ''}>${esc(q.title)}</option>`).join('')}</select>
+            <p class="hint">คำถามถูกคัดลอกไว้ในแต่ละรุ่นตอนสร้างรุ่น · เปลี่ยนชุดภายหลังมีผลกับรุ่นที่สร้างใหม่เท่านั้น</p></div>
+          <div class="fld"><label for="c-pass">เกณฑ์ผ่าน Post-test (%)</label><input class="inp" id="c-pass" type="number" min="0" max="100" value="${c.pass_percent}" style="max-width:120px"></div>
+          ${c.quiz_id ? `<a class="hint" href="#edit/${c.quiz_id}">แก้คำถามในชุดนี้ ›</a>` : ''}
+        </section>
+        <section class="tcard"><h3>แบบประเมิน</h3>
+          <select class="inp" id="c-sv" aria-label="แบบประเมิน"><option value="">— ไม่มีแบบประเมิน —</option>
+            ${this.surveys.map(s => `<option value="${s.id}" ${s.id === c.survey_id ? 'selected' : ''}>${esc(s.title)}</option>`).join('')}</select>
+          <p class="hint">ไม่ระบุตัวตน · ขึ้นหลังผ่าน Post-test${c.survey_id ? ` · <a href="#survey/${c.survey_id}">แก้ข้อคำถาม ›</a>` : ''}</p>
+        </section>
+        <section class="tcard"><h3>โรงพยาบาลและแผนก</h3>
+          <div class="row" style="gap:16px">${this.hospitals.map(h => `<label class="switch"><input type="checkbox" data-hosp="${esc(h)}" ${hs.includes(h) ? 'checked' : ''}> ${esc(h)}</label>`).join('')
+            || '<span class="hint">ยังไม่มีรายชื่อโรงพยาบาล (ผู้ดูแลระบบเพิ่มได้)</span>'}</div>
+          <div class="fld"><label for="c-dall">แผนกที่ให้เลือก</label><select class="inp" id="c-dall">
+            <option value="all" ${ds ? '' : 'selected'}>ทุกแผนกในรายชื่อหลัก (${this.depts.length})</option>
+            <option value="some" ${ds ? 'selected' : ''}>เลือกเฉพาะบางแผนก${ds ? ` (${ds.length})` : ''}</option></select></div>
+          <div id="c-dbox" class="dbox" ${ds ? '' : 'hidden'}>${this.depts.map(d => `<label><input type="checkbox" data-dept="${esc(d)}" ${!ds || ds.includes(d) ? 'checked' : ''}> ${esc(d)}</label>`).join('')}</div>
+          <div class="fld"><label for="c-roster">รายชื่อผู้จอง / พนักงาน (ใส่รหัสแล้วเติมชื่อ-แผนกให้)</label>
+            <select class="inp" id="c-roster"><option value="">— ไม่ใช้ —</option>${[...new Set(['codegray', c.roster_source].filter(Boolean))].map(s =>
+              `<option value="${esc(s)}" ${s === c.roster_source ? 'selected' : ''}>${esc(s === 'codegray' ? 'Code Gray (จาก Google Sheet ระบบจองเดิม)' : s)}</option>`).join('')}</select></div>
+        </section>
+        <section class="tcard"><h3>ผู้จัดร่วม</h3>
+          <p class="hint">เปิด-ปิดขั้นตอน ดูผล และพิมพ์ใบลงชื่อได้ทุกรุ่น${own ? '' : ' · แก้รายชื่อได้เฉพาะเจ้าของงาน'}</p>
+          <textarea class="inp" id="c-co" rows="2" placeholder="อีเมล @${esc(CFG.ALLOWED_DOMAIN || '')} บรรทัดละ 1 คน" ${own ? '' : 'disabled'}>${esc((c.cohosts || []).join('\n'))}</textarea>
+        </section>
+      </div></div>
+      <div class="savebar"><div class="in">${c.id && own ? '<button class="btn danger" id="c-del">ลบงานอบรม</button>' : ''}<span class="grow"></span>
+        <label class="switch hint" ${c.id ? '' : 'hidden'}><input type="checkbox" id="c-apply" checked> ใช้กับทุกรุ่นในงานนี้ด้วย</label>
+        <button class="btn sun" id="c-save">${c.id ? 'บันทึกการตั้งค่า' : 'สร้างงานอบรม'}</button></div></div>`;
+    $('#c-dall').onchange = e => { $('#c-dbox').hidden = e.target.value === 'all'; };
+    $('#c-pinr').onclick = () => { $('#c-pin').value = String(Math.floor(1000 + Math.random() * 9000)); };
+    $('#c-save').onclick = () => this.saveSettings();
+    const del = $('#c-del'); if (del) del.onclick = () => this.remove();
+  },
+  async saveSettings() {
+    const c = this.c, title = $('#c-title').value.trim();
+    if (!title) return toast('กรุณาใส่ชื่องาน', true);
+    const steps = {}; $$('[data-step]').forEach(b => steps[b.dataset.step] = b.checked);
+    const hs = $$('[data-hosp]').filter(b => b.checked).map(b => b.dataset.hosp);
+    const some = $('#c-dall').value === 'some';
+    const val = {
+      title, cert_title: $('#c-cert').value.trim(), location: $('#c-loc').value.trim(),
+      seats: Math.max(0, +$('#c-seat').value || 0), steps,
+      booking_open: $('#c-bopen').checked, booking_close_days: Math.max(0, Math.min(60, +$('#c-bclose').value || 0)),
+      quiz_id: $('#c-quiz').value || null, survey_id: $('#c-sv').value || null,
+      pass_percent: Math.max(0, Math.min(100, +$('#c-pass').value || 0)),
+      hospitals: hs.length === this.hospitals.length ? null : hs,
+      departments: some ? $$('[data-dept]').filter(b => b.checked).map(b => b.dataset.dept) : null,
+      roster_source: $('#c-roster').value || null,
+      finish_pin_enabled: $('#c-pinon').checked, finish_pin: $('#c-pin').value.trim()
+    };
+    if (!$('#c-co').disabled) val.cohosts = $('#c-co').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+    const dom = (CFG.ALLOWED_DOMAIN || '').toLowerCase();
+    if (val.cohosts && dom && val.cohosts.some(e => !e.endsWith('@' + dom))) return toast(`ผู้จัดร่วมต้องเป็นอีเมล @${dom}`, true);
+    const btn = $('#c-save'); btn.disabled = true;
+    try {
+      if (!c.id) {
+        const { data, error } = await sb.from('courses').insert(val).select('*').single();
+        if (error) throw error;
+        toast('สร้างงานอบรมแล้ว · เพิ่มรุ่นได้ที่แท็บรุ่น'); location.hash = '#course/' + data.id; return;
+      }
+      const { data, error } = await sb.from('courses').update(val).eq('id', c.id).select('*').single();
+      if (error) throw error;
+      this.c = data;
+      if ($('#c-apply').checked && this.rows.length) {
+        const upd = { pass_percent: data.pass_percent, survey_id: data.survey_id, departments: data.departments, roster: data.roster_source };
+        if (val.cohosts) upd.cohosts = data.cohosts;
+        const r = await sb.from('trainings').update(upd).eq('course_id', c.id);
+        if (r.error) throw r.error;
+      }
+      toast('บันทึกแล้ว'); btn.disabled = false; this.render();
+    } catch (e) { toast(errMsg(e), true); btn.disabled = false; }
+  },
+  async remove() {
+    const c = this.c;
+    if (!confirm(`ลบงานอบรม “${c.title}”?\nรุ่นและผลสอบยังอยู่ (ย้ายไปอยู่ในหัวข้อ “รอบที่ยังไม่อยู่ในงานอบรม”) · ข้อมูลการจองและลงทะเบียนของงานนี้จะถูกลบ`)) return;
+    const { error } = await sb.from('courses').delete().eq('id', c.id);
+    if (error) return toast(errMsg(error), true);
+    toast('ลบงานอบรมแล้ว'); location.hash = '#admin';
+  }
+};
+
 const Report = {
   async open(arg) {
     setBody('admin');
