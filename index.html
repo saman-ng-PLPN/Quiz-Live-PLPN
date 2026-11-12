@@ -1551,8 +1551,8 @@ const Host = {
     const key = this.phase + ':' + this.s.current_index;
     if (this.phase === 'lobby') GameAudio.loop('lobby');
     else if (this.phase === 'question') {
-      if (this.qKey !== key) { this.qKey = key; GameAudio.lastSec = null; GameAudio.stopLoop(); }
-      if (GameAudio.mode !== 'hurry') GameAudio.loop('question');
+      if (this.qKey !== key) { this.qKey = key; GameAudio.lastSec = null; GameAudio.clockOn = false; GameAudio.stopLoop(); }
+      if (!GameAudio.clockOn) GameAudio.loop('question');
     }
     else if (this.sfxKey !== key && GameAudio.ready()) {
       this.sfxKey = key;
@@ -1843,26 +1843,26 @@ const GameAudio = {
     }, 25);
   },
   stopLoop() { clearInterval(this.timer); this.timer = null; this.mode = null; },
-  stop() { this.want = null; this.stopLoop(); this.lastSec = null; },
-  // เรียกทุก tick ระหว่างคำถาม: 5 วินาทีสุดท้ายเร่งจังหวะ + ติ๊ก
+  stop() { this.want = null; this.stopLoop(); this.lastSec = null; this.clockOn = false; },
+  // เรียกทุก tick ระหว่างคำถาม: 5 วินาทีสุดท้าย เพลงหยุด เหลือแค่เสียงนาฬิกา ติ๊ก-ต็อก
   countdown(left) {
     if (!this.ready()) return;
     const sec = Math.ceil(left);
     if (left > 0 && left <= 5) {
-      if (this.mode !== 'hurry') this.loop('hurry');
-      if (sec !== this.lastSec) { this.lastSec = sec; const t = this.ctx.currentTime;
-        this.tone(t, sec <= 2 ? 1568 : 1175, 0.09, 'square', 0.14); }
+      this.clockOn = true; if (this.timer) this.stopLoop();
+      if (sec !== this.lastSec) { this.lastSec = sec; this.tick(this.ctx.currentTime + 0.01, sec % 2 === 0); }
     }
   },
+  // เสียงนาฬิกา: คลิกไม้สั้นๆ (ติ๊ก = สูง · ต็อก = ต่ำ)
+  tick(t, tock) {
+    this.noise(t, 0.035, 0.22, 0, tock ? 1500 : 2300);
+    this.tone(t, tock ? 1050 : 1500, 0.03, 'sine', 0.05);
+  },
+  // หมดเวลา: นาฬิกาปลุกเบาๆ 2 ชุด (ติ๊ด-ติ๊ด ติ๊ด-ติ๊ด)
   buzzer() {
     this.stop(); if (!this.on || !this.ensure()) return;
-    const c = this.ctx, t = c.currentTime + 0.02;
-    [[220, 'sawtooth', 0.22], [233, 'square', 0.12]].forEach(([f, type, v]) => {
-      const o = c.createOscillator(), g = c.createGain(); o.type = type;
-      o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * 0.6, t + 0.7);
-      g.gain.setValueAtTime(v, t); g.gain.setValueAtTime(v, t + 0.55); g.gain.linearRampToValueAtTime(0.0001, t + 0.75);
-      o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.8);
-    });
+    const t = this.ctx.currentTime + 0.03;
+    [0, 0.14, 0.42, 0.56].forEach(d => { this.tone(t + d, 1760, 0.1, 'sine', 0.07); this.tone(t + d, 3520, 0.08, 'sine', 0.015); });
   },
   jingle() {
     this.stop(); if (!this.on || !this.ensure()) return;
