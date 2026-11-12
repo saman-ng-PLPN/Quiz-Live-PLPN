@@ -1812,6 +1812,12 @@ const GameAudio = {
   MELODY: [72, -1, 76, 74, 72, -1, 67, -1, 69, -1, 72, 74, 76, -1, 74, -1],
   playStep(t, i) {
     const bar = Math.floor(i / 16) % 4, k = i % 16, [root, ch] = this.PROG[bar], m = this.mode, dur = 60 / this.bpm / 4;
+    if (m === 'clock') {
+      // นาฬิกา: ติ๊ก-ต็อก ทุกครึ่งวินาที + เสียงพื้นเบามากต่อเนื่อง (กันลำโพง HDMI/บลูทูธตัดเสียงช่วงเงียบ)
+      if (k % 4 === 0) this.tick(t, (i / 4) % 2 === 1);
+      if (k % 8 === 0) this.tone(t, 55, dur * 8.2, 'sine', 0.006);
+      return;
+    }
     if (m === 'lobby') {
       if (k % 8 === 0) this.kick(t, 0.28);
       if (k % 4 === 2) this.noise(t, 0.05, 0.05);
@@ -1832,7 +1838,7 @@ const GameAudio = {
   loop(mode) {
     this.want = mode;
     if (!this.on || !this.ensure()) return;
-    this.bpm = mode === 'lobby' ? 104 : mode === 'hurry' ? 168 : 128;
+    this.bpm = mode === 'lobby' ? 104 : mode === 'hurry' ? 168 : mode === 'clock' ? 120 : 128;
     if (this.mode === mode && this.timer) return;
     const fresh = !this.timer; this.mode = mode;
     if (!fresh) return;
@@ -1844,19 +1850,20 @@ const GameAudio = {
   },
   stopLoop() { clearInterval(this.timer); this.timer = null; this.mode = null; },
   stop() { this.want = null; this.stopLoop(); this.lastSec = null; this.clockOn = false; },
-  // เรียกทุก tick ระหว่างคำถาม: 5 วินาทีสุดท้าย เพลงหยุด เหลือแค่เสียงนาฬิกา ติ๊ก-ต็อก
+  // เรียกทุก tick ระหว่างคำถาม: 5 วินาทีสุดท้าย เพลงหยุด เหลือแค่เสียงนาฬิกา ติ๊ก-ต็อก (เล่นต่อเนื่องจนหมดเวลา)
   countdown(left) {
     if (!this.ready()) return;
     const sec = Math.ceil(left);
     if (left > 0 && left <= 5) {
-      this.clockOn = true; if (this.timer) this.stopLoop();
-      if (sec !== this.lastSec) { this.lastSec = sec; this.tick(this.ctx.currentTime + 0.01, sec % 2 === 0); }
+      this.clockOn = true;
+      if (this.mode !== 'clock') { this.stopLoop(); this.loop('clock'); }
+      this.lastSec = sec;
     }
   },
   // เสียงนาฬิกา: คลิกไม้สั้นๆ (ติ๊ก = สูง · ต็อก = ต่ำ)
   tick(t, tock) {
-    this.noise(t, 0.04, 0.9, 0, tock ? 1500 : 2300);
-    this.tone(t, tock ? 1050 : 1500, 0.035, 'sine', 0.2);
+    this.noise(t, 0.05, 0.9, 0, tock ? 1400 : 2200);
+    this.tone(t, tock ? 880 : 1320, 0.05, 'triangle', 0.22);
   },
   // หมดเวลา: นาฬิกาปลุกเบาๆ 2 ชุด (ติ๊ด-ติ๊ด ติ๊ด-ติ๊ด)
   buzzer() {
