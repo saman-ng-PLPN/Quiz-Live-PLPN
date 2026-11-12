@@ -2357,9 +2357,10 @@ const Training = {
     const tabs = [['sum', 'ภาพรวม'], ['people', 'รายคน'], ['dept', 'รายแผนก'], ['items', 'รายข้อ']].concat(t.survey_id ? [['survey', 'แบบประเมิน']] : []);
     if (!tabs.some(x => x[0] === this.tab)) this.tab = 'sum';
     app.innerHTML = adminShell(this.user, `
-      <div class="row"><a class="btn light sm" href="${t.series_id ? '#report/s=' + t.series_id : '#admin'}">← ${t.series_id ? 'ทุกรุ่น' : 'กลับ'}</a><h2 class="sec grow">${esc(t.title)}</h2></div>
+      <div class="row"><a class="btn light sm" href="${t.course_id ? '#course/' + t.course_id : '#admin'}">← ${t.course_id ? 'ทุกรุ่น' : 'กลับ'}</a><h2 class="sec grow">${esc(t.title)}</h2></div>
       ${!this.canOwn ? `<div class="notice" style="margin:8px 0 0">👥 คุณเป็น<b>ผู้จัดร่วม</b>ของรอบนี้ · เจ้าของ: ${esc(t.owner_email)}</div>` : ''}
-      ${t.series_id ? `<p class="hint" style="margin:4px 0 0">📚 ชุด <b>${esc(t.series || '')}</b> · รุ่นที่ ${t.round_no || '–'} · <a href="#report/s=${t.series_id}">ดูรายงานรวมทุกรุ่น</a></p>` : ''}
+      ${t.course_id ? `<p class="hint" style="margin:4px 0 0">📚 <a href="#course/${t.course_id}">${esc(t.series || 'งานอบรม')}</a> · ${esc(t.round_label || ('รุ่นที่ ' + (t.round_no || '–')))}</p>`
+        : t.series_id ? `<p class="hint" style="margin:4px 0 0">📚 ชุด <b>${esc(t.series || '')}</b> · รุ่นที่ ${t.round_no || '–'} · <a href="#report/s=${t.series_id}">ดูรายงานรวมทุกรุ่น</a></p>` : ''}
       <div class="tcard">
         <div class="trow"><span class="phase">รหัส ${esc(t.code)}</span><span class="hint">${t.total} ข้อ · เกณฑ์ผ่าน <b>Post-test</b> (Pre-test ไม่ตัดสินผ่าน/ไม่ผ่าน)</span>
           <input class="inp" id="pass" type="number" min="0" max="100" value="${t.pass_percent}" style="width:80px;padding:6px 8px"> %</div>
@@ -2450,7 +2451,7 @@ const Training = {
       if (!confirm(`ลบรอบ “${t.title}” และผลแบบทดสอบ/แบบประเมินทั้งหมด? กู้คืนไม่ได้`)) return;
       const { error } = await sb.from('trainings').delete().eq('id', this.id);
       if (error) return toast(errMsg(error), true);
-      location.hash = '#admin';
+      location.hash = t.course_id ? '#course/' + t.course_id : '#admin';
     };
     this.renderBody();
   },
