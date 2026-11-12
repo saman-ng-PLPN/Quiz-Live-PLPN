@@ -3076,17 +3076,43 @@ const Course = {
 // v14.2: หน้าผู้เข้าร่วม ?c=<รหัสงาน> — ลงชื่อเข้า (เซ็นชื่อ) / จองรอบ
 // =====================================================================
 function sigPad(canvas) {
-  const g = canvas.getContext('2d'); let drawing = false, strokes = 0, last = null;
+  // กันฝ่ามือ: วาดตามนิ้ว/ปากกาเพียง 1 จุด · จุดสัมผัสใหญ่ (ฝ่ามือ) ไม่นับ · ถ้ามีปากกา ไม่นับนิ้ว
+  // ถ้าจุดที่จับไว้ไม่ขยับ (เช่น ฝ่ามือที่ระบบวัดขนาดไม่ได้) แล้วมีอีกจุดลากอยู่ → เปลี่ยนไปวาดตามจุดที่ลาก
+  const g = canvas.getContext('2d'); let strokes = 0, active = null, last = null, lastMove = 0, pen = false;
+  const pts = new Map();
   const fit = () => { const r = canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
     canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d);
-    g.setTransform(d, 0, 0, d, 0, 0); g.lineWidth = 2.4; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#0b1f4d'; strokes = 0; };
+    g.setTransform(d, 0, 0, d, 0, 0); g.lineWidth = 2.4; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#0b1f4d'; g.fillStyle = '#0b1f4d'; strokes = 0; };
   const pos = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  canvas.addEventListener('pointerdown', e => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); drawing = true; last = pos(e);
-    g.beginPath(); g.arc(last[0], last[1], 1.1, 0, 7); g.fillStyle = '#0b1f4d'; g.fill(); strokes++; });
-  canvas.addEventListener('pointermove', e => { if (!drawing) return; e.preventDefault(); const p = pos(e);
-    g.beginPath(); g.moveTo(last[0], last[1]); g.lineTo(p[0], p[1]); g.stroke(); last = p; strokes++; });
-  const end = () => { drawing = false; };
-  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  const palm = e => e.pointerType === 'touch' && (e.width > 44 || e.height > 44);
+  const ignore = e => palm(e) || (pen && e.pointerType === 'touch');
+  const dot = p => { g.beginPath(); g.arc(p[0], p[1], 1.1, 0, 7); g.fill(); };
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (e.pointerType === 'pen') { pen = true; if (active !== null && pts.get(active) && pts.get(active).type === 'touch') active = null; }
+    if (ignore(e)) return;
+    try { canvas.setPointerCapture(e.pointerId); } catch (er) {}
+    pts.set(e.pointerId, { p: pos(e), type: e.pointerType, moved: 0 });
+    if (active === null) { active = e.pointerId; last = pos(e); lastMove = performance.now(); dot(last); strokes++; }
+  });
+  canvas.addEventListener('pointermove', e => {
+    const t = pts.get(e.pointerId); if (!t || ignore(e)) return;
+    e.preventDefault();
+    const p = pos(e), d = Math.hypot(p[0] - t.p[0], p[1] - t.p[1]);
+    if (e.pointerId !== active) {
+      t.moved += d; t.p = p;
+      // จุดที่วาดอยู่นิ่งเกิน 250ms แต่อีกจุดลากไปแล้ว > 6px → จุดที่นิ่งน่าจะเป็นฝ่ามือ
+      if (active === null || (performance.now() - lastMove > 250 && t.moved > 6)) { active = e.pointerId; last = p; lastMove = performance.now(); }
+      return;
+    }
+    if (d < 0.5) return;
+    g.beginPath(); g.moveTo(last[0], last[1]); g.lineTo(p[0], p[1]); g.stroke();
+    last = p; t.p = p; lastMove = performance.now(); strokes++;
+  });
+  const end = e => { pts.delete(e.pointerId); if (e.pointerId === active) active = null; };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(n => canvas.addEventListener(n, end));
+  // กัน iOS เลื่อนหน้า/ซูมระหว่างเซ็น
+  ['touchstart', 'touchmove'].forEach(n => canvas.addEventListener(n, e => e.preventDefault(), { passive: false }));
   fit();
   return {
     clear: fit, empty: () => strokes < 8,
