@@ -1044,8 +1044,7 @@ const Admin = {
           <a class="btn sm" href="#report/s=${g.sid}">ทุกรุ่น / รายงานรวม</a></summary>
           <div style="padding-left:18px">${g.items.map(t => this.trainingRow(t, u)).join('')}</div></details>`).join('')}</details>` : '';
     return (cards || `<div class="empty">ยังไม่มีงานอบรม · กด “สร้างงานอบรม” แล้วตั้งค่าหลักสูตร รุ่น ชุดคำถาม และแบบประเมินในที่เดียว</div>`)
-      + `<a class="ccard newc" href="#course/new"><b>สร้างงานอบรมใหม่</b>
-          <span>ตั้งชื่อหลักสูตร → เลือก รพ. → เลือกชุดคำถาม Pre/Post และแบบประเมิน → เพิ่มรุ่นและที่นั่ง → ได้ QR ของแต่ละรุ่น</span></a>` + looseHTML;
+      + looseHTML;
   },
   quizSecHTML() {
     return `<div class="row" style="margin-top:16px">
