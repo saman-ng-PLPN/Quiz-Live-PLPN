@@ -1842,14 +1842,16 @@ const GameAudio = {
   },
   // เสียงนาฬิกา: คลิกไม้สั้นๆ (ติ๊ก = สูง · ต็อก = ต่ำ)
   tick(t, tock) {
-    this.noise(t, 0.035, 0.22, 0, tock ? 1500 : 2300);
-    this.tone(t, tock ? 1050 : 1500, 0.03, 'sine', 0.05);
+    this.noise(t, 0.04, 0.9, 0, tock ? 1500 : 2300);
+    this.tone(t, tock ? 1050 : 1500, 0.035, 'sine', 0.2);
   },
   // หมดเวลา: นาฬิกาปลุกเบาๆ 2 ชุด (ติ๊ด-ติ๊ด ติ๊ด-ติ๊ด)
   buzzer() {
-    this.stop(); if (!this.on || !this.ensure()) return;
+    // หยุดเพลง และกันเพลงกลับมาเล่นระหว่างรอเฉลย (คงสถานะ 'นาฬิกา' ไว้จนข้อถัดไป)
+    this.want = null; this.stopLoop(); this.lastSec = null; this.clockOn = true;
+    if (!this.on || !this.ensure()) return;
     const t = this.ctx.currentTime + 0.03;
-    [0, 0.14, 0.42, 0.56].forEach(d => { this.tone(t + d, 1760, 0.1, 'sine', 0.07); this.tone(t + d, 3520, 0.08, 'sine', 0.015); });
+    [0, 0.14, 0.42, 0.56].forEach(d => { this.tone(t + d, 1760, 0.11, 'sine', 0.24); this.tone(t + d, 3520, 0.09, 'sine', 0.05); });
   },
   jingle() {
     this.stop(); if (!this.on || !this.ensure()) return;
