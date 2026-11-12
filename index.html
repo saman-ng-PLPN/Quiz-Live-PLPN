@@ -520,6 +520,17 @@ table.crep tr.tot td{background:#f6f8fa}
 .frm2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
 .switch.mini{display:inline-flex}
 .dbox{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:grid;gap:4px;font-size:14px}
+.linkbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe}
+.linkbar a{color:#1d4ed8;word-break:break-all}
+img.sigimg{height:30px;max-width:110px;object-fit:contain;background:#fff;border:1px solid #eef0f3;border-radius:4px}
+.rlist{display:grid;gap:8px}
+.ropt{display:flex;gap:10px;align-items:center;border:2px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff;cursor:pointer}
+.ropt:has(input:checked){border-color:#2563eb;background:#eff6ff}
+.ropt.dis{opacity:.5;cursor:default}
+.ropt small{display:block;color:var(--muted);font-size:13px}
+.ropt em{font-style:normal;font-size:13px;font-weight:600;color:#1b6b42;white-space:nowrap}
+.ropt input{width:20px;height:20px;accent-color:#2563eb;flex-shrink:0}
+canvas.sigpad{width:100%;height:180px;border:2px dashed #93c5fd;border-radius:14px;background:#fff;touch-action:none;display:block}
 </style>
 </head>
 <body>
@@ -657,6 +668,8 @@ const Player = {
     setBody('player');
     const tcode = (new URLSearchParams(location.search).get('t') || '').replace(/\D/g, '').slice(0, 6);
     if (tcode) return Test.start(tcode);
+    const ccode = (new URLSearchParams(location.search).get('c') || '').replace(/\D/g, '').slice(0, 6);
+    if (ccode) return Entry.start(ccode);
     const scode = (new URLSearchParams(location.search).get('s') || '').replace(/\D/g, '').slice(0, 6);
     if (scode) return OpenSurvey.start(scode);
     const pin = (new URLSearchParams(location.search).get('pin') || '').replace(/\D/g, '').slice(0, 6);
@@ -2810,7 +2823,10 @@ const Course = {
   canOwn() { return this.c.owner_id === this.user.id || this.isAdmin; },
   render() {
     const c = this.c, isNew = !c.id;
-    const tabs = isNew ? [] : [['rounds', `รุ่น <span class="cnt">${this.rows.length}</span>`], ['report', 'รายงานรวม'], ['settings', 'ตั้งค่า']];
+    const nCk = this.rows.reduce((n, r) => n + (r.checkin || 0), 0);
+    const tabs = isNew ? [] : [['rounds', `รุ่น <span class="cnt">${this.rows.length}</span>`]]
+      .concat(stepOn(c, 'checkin') || stepOn(c, 'finish') ? [['attend', `ลงชื่อ <span class="cnt">${nCk}</span>`]] : [])
+      .concat([['report', 'รายงานรวม'], ['settings', 'ตั้งค่า']]);
     app.innerHTML = adminShell(this.user, `
       <div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a>
         <div class="grow" style="min-width:0"><h2 class="sec">${isNew ? 'สร้างงานอบรมใหม่' : esc(c.title)}</h2>
@@ -2828,11 +2844,13 @@ const Course = {
   renderBody() {
     const box = $('#cbody'); if (!box) return;
     if (this.tab === 'settings') return this.renderSettings(box);
+    if (this.tab === 'attend') return this.renderAttend(box);
     const c = this.c, rows = this.rows;
     const used = STEPS.filter(([k]) => stepOn(c, k));
     const cell = (r, k) => { const v = r[STEP_KEY[k]] || 0;
       return k === 'booking' ? `<span>${v}${r.seats ? ' / ' + r.seats : ''}</span>${r.seats ? `<i class="bar"><i style="width:${Math.min(100, Math.round(v / r.seats * 100))}%"></i></i>` : ''}` : v; };
-    const tot = courseTotals(c, rows), bk = true, bkOn = stepOn(c, 'booking') && c.booking_open;
+    const tot = courseTotals(c, rows), bk = true, bkOn = stepOn(c, 'booking') && c.booking_open, ck = stepOn(c, 'checkin');
+    const ckCell = r => `<label class="switch mini" title="เปิด/ปิดลงชื่อเข้าร่วมรอบนี้"><input type="checkbox" data-ck="${r.id}" ${r.open && r.open.checkin ? 'checked' : ''}></label><div class="hint">${r.open && r.open.checkin ? 'เปิดอยู่' : 'ปิด'}</div>`;
     const bkCell = r => {
       const note = !stepOn(c, 'booking') ? 'ไม่ใช้ขั้นจอง' : !c.booking_open ? 'งานปิดจอง' : r.booking_closed ? 'ปิดรุ่นนี้' : r.bookable ? 'เปิดรับ' : (r.seats && r.booked >= r.seats ? 'เต็ม' : 'หมดเวลาจอง');
       return `<label class="switch mini" title="เปิด/ปิดรับจองเฉพาะรุ่นนี้"><input type="checkbox" data-bk="${r.id}" ${r.booking_closed || !bkOn ? '' : 'checked'} ${bkOn ? '' : 'disabled'}></label>
@@ -2842,19 +2860,37 @@ const Course = {
       const end = r.starts_at && new Date(r.starts_at).getTime() + 3 * 3600e3 < Date.now();
       return `<span class="phase">${end ? 'อบรมแล้ว' : 'รอวันอบรม'}</span>`; };
     box.innerHTML = `
+      ${stepOn(c, 'booking') || ck ? `<div class="linkbar"><span class="grow">ลิงก์/QR สำหรับผู้เข้าร่วม (${[stepOn(c, 'booking') ? 'จอง' : '', ck ? 'ลงชื่อ' : ''].filter(Boolean).join(' และ ')}):
+          <a href="${esc(this.entryLink())}" target="_blank" rel="noopener"><b>${esc(this.entryLink().replace(/^https?:\/\//, ''))}</b></a></span>
+          <button class="btn light sm" id="lk-copy">คัดลอก</button><button class="btn sm" id="lk-qr">แสดง QR เต็มจอ</button>
+          ${ck && rows.length ? `<button class="btn light sm" id="ck-all">${rows.every(r => r.open && r.open.checkin) ? 'ปิดลงชื่อทุกรอบ' : 'เปิดลงชื่อทุกรอบ'}</button>` : ''}</div>` : ''}
       <div class="tcard">${stepTilesHTML(c, rows)}</div>
       <p class="hint" style="margin:14px 0 8px">ตัวเลข = จำนวนคนที่ผ่านขั้นนั้นแล้ว อ่านซ้ายไปขวาตามเส้นทางของผู้เข้าอบรม · กด “เปิดรุ่น” เพื่อคุมวันอบรม (เปิด-ปิดขั้น QR เกม Pre-test รายงาน)</p>
       ${rows.length ? `<div class="tblwrap"><table class="rep crep"><thead><tr><th>รุ่น</th><th>วันเวลา</th>
-          ${used.map(([k]) => `<th class="num">${STEPS.findIndex(s => s[0] === k) + 1} ${SHORT[k]}</th>`).join('')}${bk ? '<th>รับจอง</th>' : ''}<th>สถานะ</th><th></th></tr></thead>
+          ${used.map(([k]) => `<th class="num">${STEPS.findIndex(s => s[0] === k) + 1} ${SHORT[k]}</th>`).join('')}${bk ? '<th>รับจอง</th>' : ''}${ck ? '<th>ลงชื่อ</th>' : ''}<th>สถานะ</th><th></th></tr></thead>
         <tbody>${rows.map(r => `<tr><td style="white-space:normal;min-width:150px"><b>${esc(r.label)}</b><div class="hint">รหัส ${esc(r.code)}</div></td>
           <td>${r.starts_at ? `${thDate(r.starts_at)} ${thTime(r.starts_at)}` : '<span class="hint">ยังไม่ระบุ</span>'}</td>
           ${used.map(([k]) => `<td class="num">${cell(r, k)}</td>`).join('')}
-          ${bk ? `<td>${bkCell(r)}</td>` : ''}<td>${state(r)}</td><td><a class="btn sm" href="#training/${r.id}">เปิดรุ่น</a></td></tr>`).join('')}
-          <tr class="tot"><td><b>รวม</b></td><td></td>${used.map(([k]) => `<td class="num"><b>${tot[k]}${k === 'booking' && tot.seats ? ' / ' + tot.seats : ''}</b></td>`).join('')}${bk ? '<td></td>' : ''}<td></td><td></td></tr>
+          ${bk ? `<td>${bkCell(r)}</td>` : ''}${ck ? `<td>${ckCell(r)}</td>` : ''}<td>${state(r)}</td><td><a class="btn sm" href="#training/${r.id}">เปิดรุ่น</a></td></tr>`).join('')}
+          <tr class="tot"><td><b>รวม</b></td><td></td>${used.map(([k]) => `<td class="num"><b>${tot[k]}${k === 'booking' && tot.seats ? ' / ' + tot.seats : ''}</b></td>`).join('')}${bk ? '<td></td>' : ''}${ck ? '<td></td>' : ''}<td></td><td></td></tr>
         </tbody></table></div>` : '<div class="empty">ยังไม่มีรุ่น · เพิ่มรุ่นแรกได้ด้านล่าง</div>'}
       ${!bkOn ? `<p class="hint" style="margin-top:8px">สวิตช์ <b>รับจอง</b> รายรุ่นยังกดไม่ได้ เพราะ${!stepOn(c, 'booking') ? 'งานนี้ไม่ได้ใช้ขั้นจอง' : 'งานนี้ยังปิดรับจองทั้งงาน'} · เปิดได้ที่แท็บ <a href="#course/${c.id}:settings">ตั้งค่า</a> (ขั้นตอนที่ใช้ → 1 จอง และ เปิดรับจอง)</p>` : ''}
       ${this.addRoundHTML()}`;
     this.bindAddRound();
+    if ($('#lk-copy')) $('#lk-copy').onclick = async () => { try { await navigator.clipboard.writeText(this.entryLink()); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(this.entryLink()); } };
+    if ($('#lk-qr')) $('#lk-qr').onclick = () => showBigQR(c.title, this.entryLink());
+    if ($('#ck-all')) $('#ck-all').onclick = async () => {
+      const on = !rows.every(r => r.open && r.open.checkin);
+      const { error } = await sb.from('trainings').update({ checkin_open: on }).eq('course_id', c.id);
+      if (error) return toast(errMsg(error), true);
+      toast(on ? 'เปิดลงชื่อทุกรอบแล้ว' : 'ปิดลงชื่อทุกรอบแล้ว'); await this.loadRows(); this.renderBody();
+    };
+    $$('[data-ck]', box).forEach(b => b.onchange = async () => {
+      const r = this.rows.find(x => x.id === b.dataset.ck); b.disabled = true;
+      const { error } = await sb.from('trainings').update({ checkin_open: b.checked }).eq('id', r.id);
+      if (error) { toast(errMsg(error), true); b.checked = !b.checked; b.disabled = false; return; }
+      toast(b.checked ? `เปิดลงชื่อ ${r.label} แล้ว` : `ปิดลงชื่อ ${r.label} แล้ว`); await this.loadRows(); this.renderBody();
+    });
     $$('[data-bk]', box).forEach(b => b.onchange = async () => {
       const r = this.rows.find(x => x.id === b.dataset.bk), closed = !b.checked;
       if (closed && r.booked && !confirm(`ปิดรับจอง ${r.label}?\nคนที่จองไว้แล้ว ${r.booked} คนยังอยู่ · คนใหม่จองรุ่นนี้ไม่ได้`)) { b.checked = true; return; }
@@ -2865,9 +2901,34 @@ const Course = {
       await this.loadRows(); this.renderBody();
     });
   },
+  entryLink() { return location.origin + location.pathname + '?c=' + this.c.booking_code; },
+  async renderAttend(box) {
+    const c = this.c; this.af = this.af || { round: '', q: '' };
+    box.innerHTML = '<div class="center-msg" style="min-height:20vh"><div class="spinner"></div></div>';
+    try { this.att = await Attend.load(c, this.rows); } catch (e) { toast(errMsg(e), true); this.att = []; }
+    const draw = async () => {
+      box.innerHTML = Attend.html(c, this.rows, this.att, this.af);
+      $('#at-round').onchange = e => { this.af.round = e.target.value; draw(); };
+      $('#at-q').oninput = e => { this.af.q = e.target.value; clearTimeout(this.aq); this.aq = setTimeout(() => { draw().then(() => { const q = $('#at-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }); }, 350); };
+      const list = () => this.att.filter(a => !this.af.round || a.training_id === this.af.round);
+      $('#at-print').onclick = async () => { const l = list(); const urls = await Attend.signUrls(l); Attend.print(c, this.rows, l, urls, this.af.round); };
+      $('#at-xls').onclick = () => Attend.excel(c, this.rows.filter(r => !this.af.round || r.id === this.af.round), list());
+      $$('[data-atdel]', box).forEach(b => b.onclick = async () => {
+        const a = this.att.find(x => String(x.id) === b.dataset.atdel);
+        if (!confirm(`ลบการลงชื่อของ ${a.full_name}?`)) return;
+        const { error } = await sb.from('attendance').delete().eq('id', a.id);
+        if (error) return toast(errMsg(error), true);
+        this.att = this.att.filter(x => x !== a); toast('ลบแล้ว'); draw();
+      });
+      const imgs = $$('img[data-sig]', box);
+      if (imgs.length) { const urls = await Attend.signUrls(this.att.filter(a => imgs.some(i => i.dataset.sig === a.checkin_sig || i.dataset.sig === a.finish_sig)));
+        imgs.forEach(i => { if (urls[i.dataset.sig]) i.src = urls[i.dataset.sig]; }); }
+    };
+    await draw();
+  },
   addRoundHTML() {
     const c = this.c;
-    if (!c.quiz_id) return `<div class="notice">ยังไม่ได้เลือกชุดคำถาม Pre/Post · ไปที่แท็บ <b>ตั้งค่า</b> ก่อน แล้วค่อยเพิ่มรุ่น</div>`;
+    if (!c.quiz_id && (stepOn(c, 'pre') || stepOn(c, 'post'))) return `<div class="notice">ยังไม่ได้เลือกชุดคำถาม Pre/Post · ไปที่แท็บ <b>ตั้งค่า</b> ก่อน แล้วค่อยเพิ่มรุ่น</div>`;
     return `<details class="tcard" id="addr"><summary style="cursor:pointer;font-weight:600">+ เพิ่มรุ่น</summary>
       <div class="frm2">
         <div class="fld"><label for="ar-label">ชื่อรุ่น</label><input class="inp" id="ar-label" placeholder="เช่น รุ่น ${this.rows.length + 1}" value="รุ่น ${this.rows.length + 1}"></div>
@@ -2892,11 +2953,7 @@ const Course = {
           let day = d ? new Date(d + 'T00:00:00+07:00') : null; if (day && i) day = new Date(day.getTime() + i * 864e5);
           const ymd = day ? new Date(day.getTime() + 7 * 3600e3).toISOString().slice(0, 10) : null;
           const at = t => ymd && t ? new Date(ymd + 'T' + t + ':00+07:00').toISOString() : null;
-          const r = await rpc('create_training', { p_quiz_id: c.quiz_id, p_title: `${c.title} · ${label}`, p_pass: c.pass_percent });
-          const { error } = await sb.from('trainings').update({ course_id: c.id, round_label: label, round_no: this.rows.length + i + 1,
-            series_id: c.id, series: c.title, starts_at: at(s), ends_at: at(e), survey_id: c.survey_id, departments: c.departments,
-            roster: c.roster_source, cohosts: c.cohosts || [] }).eq('id', r.id);
-          if (error) throw error;
+          await rpc('create_course_round', { p_course: c.id, p_label: label, p_starts: at(s), p_ends: at(e) });
         }
         toast(`สร้างแล้ว ${n} รุ่น`); await this.loadRows(); this.render();
       } catch (er) { toast(errMsg(er), true); go.disabled = false; }
@@ -3012,6 +3069,231 @@ const Course = {
     const { error } = await sb.from('courses').delete().eq('id', c.id);
     if (error) return toast(errMsg(error), true);
     toast('ลบงานอบรมแล้ว'); location.hash = '#admin';
+  }
+};
+
+// =====================================================================
+// v14.2: หน้าผู้เข้าร่วม ?c=<รหัสงาน> — ลงชื่อเข้า (เซ็นชื่อ) / จองรอบ
+// =====================================================================
+function sigPad(canvas) {
+  const g = canvas.getContext('2d'); let drawing = false, strokes = 0, last = null;
+  const fit = () => { const r = canvas.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d);
+    g.setTransform(d, 0, 0, d, 0, 0); g.lineWidth = 2.4; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#0b1f4d'; strokes = 0; };
+  const pos = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  canvas.addEventListener('pointerdown', e => { e.preventDefault(); canvas.setPointerCapture(e.pointerId); drawing = true; last = pos(e);
+    g.beginPath(); g.arc(last[0], last[1], 1.1, 0, 7); g.fillStyle = '#0b1f4d'; g.fill(); strokes++; });
+  canvas.addEventListener('pointermove', e => { if (!drawing) return; e.preventDefault(); const p = pos(e);
+    g.beginPath(); g.moveTo(last[0], last[1]); g.lineTo(p[0], p[1]); g.stroke(); last = p; strokes++; });
+  const end = () => { drawing = false; };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  fit();
+  return {
+    clear: fit, empty: () => strokes < 8,
+    blob: () => new Promise((res, rej) => {
+      // พื้นขาว + ย่อขนาดไม่เกิน 600px กว้าง (ไฟล์ราว 5–20 KB)
+      const w = Math.min(600, canvas.width), h = Math.round(canvas.height * w / canvas.width);
+      const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+      const g2 = c2.getContext('2d'); g2.fillStyle = '#fff'; g2.fillRect(0, 0, w, h); g2.drawImage(canvas, 0, 0, w, h);
+      c2.toBlob(b => b ? res(b) : rej(new Error('บันทึกลายเซ็นไม่ได้')), 'image/png');
+    })
+  };
+}
+
+const Entry = {
+  async start(code) {
+    setBody('player test');
+    this.code = code;
+    app.innerHTML = `<div class="center-msg"><div class="spinner"></div></div>`;
+    try { this.info = await rpc('course_info', { p_code: code }); }
+    catch (e) { app.innerHTML = `<div class="center-msg"><div class="box"><h2>${esc(errMsg(e))}</h2><a class="btn" href="./">กลับหน้าแรก</a></div></div>`; return; }
+    const i = this.info, ci = (i.rounds || []).filter(r => r.checkin_open);
+    this.mode = ci.length ? 'checkin' : i.booking_open && (i.rounds || []).some(r => r.open) ? 'booking' : '';
+    this.form();
+  },
+  head(sub) {
+    const i = this.info;
+    return `<div class="tst-head"><div class="brand">${brandHTML()}</div><h1>${esc(i.title)}</h1>
+      ${sub ? `<div class="row" style="gap:6px">${sub}</div>` : ''}</div>`;
+  },
+  form() {
+    const i = this.info, me = load('quizlive.tester') || {};
+    if (!this.mode) {
+      app.innerHTML = `<main class="tst">${this.head()}<div class="tcard" style="text-align:center">
+        <p style="margin:0">ยังไม่เปิดให้${i.steps && i.steps.booking ? 'จองหรือ' : ''}ลงชื่อ<br>รอผู้จัดเปิดแล้วกดรีเฟรช</p>
+        <button class="btn" id="rf">รีเฟรช</button></div></main>`;
+      $('#rf').onclick = () => this.start(this.code); return;
+    }
+    const ck = this.mode === 'checkin';
+    const rounds = (i.rounds || []).filter(r => ck ? r.checkin_open : r.open || r.booked >= 0);
+    const depts = i.departments || [], hosps = i.hospitals || [];
+    const roundHTML = rounds.map(r => {
+      const full = !ck && r.seats && r.booked >= r.seats, dis = ck ? false : (!r.open || full);
+      const when = r.starts_at ? `${thDate(r.starts_at)} ${thTime(r.starts_at)}${r.ends_at ? '–' + thTime(r.ends_at) : ''}` : '';
+      return `<label class="ropt ${dis ? 'dis' : ''}"><input type="radio" name="rd" value="${r.id}" ${dis ? 'disabled' : ''} ${rounds.length === 1 && !dis ? 'checked' : ''}>
+        <span class="grow"><b>${esc(r.label)}</b>${when ? `<small>${esc(when)}</small>` : ''}</span>
+        ${ck ? '' : `<em>${full ? 'เต็ม' : !r.open ? 'ปิดรับ' : r.seats ? `เหลือ ${r.seats - r.booked}` : 'ว่าง'}</em>`}</label>`; }).join('');
+    app.innerHTML = `<main class="tst">${this.head(`<span class="phase ${ck ? 'open' : 'pre'}">${ck ? 'ลงชื่อเข้าร่วม' : 'จองรอบ'}</span>`)}
+      <form class="tcard" id="ef" autocomplete="off">
+        <div class="fld"><label for="e-emp">รหัสพนักงาน *</label><input class="inp" id="e-emp" maxlength="30" value="${esc(me.emp_id || '')}" autocapitalize="characters">
+          ${i.roster ? '<div id="rbox" class="hint" style="margin:4px 0 0">ใส่รหัสพนักงาน ระบบจะดึงชื่อและแผนกให้</div>' : ''}</div>
+        <div class="fld"><label for="e-name">ชื่อ-นามสกุล * <small class="hint">(ไม่ต้องใส่คำนำหน้า)</small></label>
+          <input class="inp" id="e-name" maxlength="120" placeholder="เช่น สมชาย ใจดี" value="${esc(me.name || '')}"></div>
+        ${hosps.length > 1 ? `<div class="fld"><label>โรงพยาบาล *</label><div class="seg">${hosps.map(h =>
+          `<label><input type="radio" name="hosp" value="${esc(h)}" ${h === me.hospital ? 'checked' : ''}>${esc(h)}</label>`).join('')}</div></div>` : ''}
+        <div class="fld"><label for="e-dept">แผนก *</label>${depts.length
+          ? `<select class="inp" id="e-dept"><option value="">— เลือกแผนก —</option>${depts.map(d => `<option ${d === me.dept ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+               <option value="__other" ${me.dept && !depts.includes(me.dept) ? 'selected' : ''}>อื่นๆ (พิมพ์เอง)</option></select>
+             <input class="inp" id="e-dept-other" maxlength="120" placeholder="พิมพ์ชื่อแผนก" value="${esc(me.dept && !depts.includes(me.dept) ? me.dept : '')}" hidden>`
+          : `<input class="inp" id="e-dept" maxlength="120" value="${esc(me.dept || '')}">`}</div>
+        <div class="fld"><label>${ck ? 'เข้าร่วมรอบ' : 'เลือกรอบ'} *</label><div class="rlist">${roundHTML}</div></div>
+        ${ck ? `<div class="fld"><label>ลายเซ็น *</label><canvas id="sig" class="sigpad"></canvas>
+          <div class="row"><span class="hint grow">เซ็นชื่อด้วยนิ้วในกรอบ</span><button type="button" class="linkbtn" id="sigclr" style="opacity:1;color:var(--muted)">ล้างลายเซ็น</button></div></div>` : ''}
+        <button class="btn sun lg" id="go">${ck ? 'ลงชื่อเข้าร่วม' : 'ยืนยันการจอง'}</button>
+      </form></main>`;
+    const other = $('#e-dept-other'), sel = $('#e-dept');
+    if (other) { sel.onchange = () => { other.hidden = sel.value !== '__other'; if (!other.hidden) other.focus(); }; other.hidden = sel.value !== '__other'; }
+    const pad = ck ? sigPad($('#sig')) : null;
+    if (pad) $('#sigclr').onclick = () => pad.clear();
+    const emp = $('#e-emp'); let last = '', timer = null;
+    const look = async () => {
+      const v = emp.value.trim(); if (v === last) return; last = v;
+      const rbox = $('#rbox');
+      if (v.length < 2) { if (rbox) { rbox.className = 'hint'; rbox.textContent = 'ใส่รหัสพนักงาน ระบบจะดึงชื่อและแผนกให้'; } return; }
+      let r = null; try { r = await rpc('course_lookup', { p_code: this.code, p_emp: v }); } catch (e) { return; }
+      if (emp.value.trim() !== v || !r) return;
+      if (!r.found) { if (rbox) { rbox.className = 'hint'; rbox.textContent = 'ไม่พบในรายชื่อ · กรอกชื่อและแผนกเองได้'; } return; }
+      if (r.emp_id && r.emp_id !== v) { emp.value = r.emp_id; last = r.emp_id; }
+      if (r.full_name) $('#e-name').value = noPrefix(r.full_name);
+      if (r.dept) {
+        if (sel.tagName === 'SELECT') {
+          if ([...sel.options].some(o => o.value === r.dept)) { sel.value = r.dept; if (other) other.hidden = true; }
+          else if (other) { sel.value = '__other'; other.hidden = false; other.value = r.dept; }
+        } else sel.value = r.dept;
+      }
+      if (r.hospital) { const h = $$('input[name=hosp]').find(x => x.value === r.hospital); if (h) h.checked = true; }
+      if (r.booking) { const b = $$('input[name=rd]').find(x => x.value === r.booking.training_id && !x.disabled); if (b) b.checked = true; }
+      if (rbox) { rbox.className = 'notice ok'; rbox.innerHTML = `✓ พบในรายชื่อ${r.booking ? ` · จองไว้: <b>${esc(r.booking.label)}</b>` : ''}`; }
+    };
+    emp.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(look, 450); });
+    emp.addEventListener('change', look);
+    if (emp.value.trim() && i.roster) look();
+    $('#ef').onsubmit = async ev => {
+      ev.preventDefault();
+      const dept = sel.value === '__other' ? other.value.trim() : sel.value.trim();
+      const h = $('input[name=hosp]:checked'), rd = $('input[name=rd]:checked');
+      const who = { emp_id: emp.value.trim().toUpperCase(), name: noPrefix($('#e-name').value), dept, hospital: h ? h.value : (hosps.length === 1 ? hosps[0] : '') };
+      if (!who.emp_id || !who.name || !who.dept || (hosps.length > 1 && !who.hospital)) return toast('กรุณากรอกข้อมูลให้ครบทุกช่องที่มี *', true);
+      if (!rd) return toast('กรุณาเลือกรอบ', true);
+      if (pad && pad.empty()) return toast('กรุณาเซ็นชื่อในกรอบ', true);
+      save('quizlive.tester', { ...me, ...who });
+      const round = rounds.find(r => r.id === rd.value), b = $('#go'), label = b.textContent;
+      b.disabled = true; b.textContent = 'กำลังบันทึก…';
+      try {
+        if (ck) {
+          const key = who.emp_id.replace(/[^A-Za-z0-9]/g, '').slice(0, 30) || 'x';
+          const path = `${round.id}/${key}-in-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.png`;
+          const blob = await pad.blob();
+          const up = await sb.storage.from('signatures').upload(path, blob, { contentType: 'image/png', upsert: false });
+          if (up.error) throw up.error;
+          const r = await rpc('check_in', { p_code: round.code, p_emp_id: who.emp_id, p_name: who.name, p_dept: who.dept, p_hospital: who.hospital, p_sig: path });
+          this.done(`ลงชื่อเรียบร้อย`, `${esc(who.name)}<br>${esc(round.label)} · ${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.`, r && r.walk_in === false ? 'ตรงกับที่จองไว้' : '');
+        } else {
+          const r = await rpc('book_seat', { p_code: this.code, p_training: round.id, p_emp_id: who.emp_id, p_name: who.name, p_dept: who.dept, p_hospital: who.hospital });
+          this.done(r.moved ? 'ย้ายรอบเรียบร้อย' : 'จองเรียบร้อย', `${esc(who.name)}<br>${esc(r.label)}`, 'วันงานสแกน QR ของงานเพื่อลงชื่อ');
+        }
+      } catch (e) { toast(errMsg(e), true); b.disabled = false; b.textContent = label; }
+    };
+  },
+  done(title, body, note) {
+    app.innerHTML = `<main class="tst">${this.head()}<div class="tcard" style="text-align:center">
+      <div style="font-size:56px">✅</div><h2 style="margin:0">${title}</h2><p style="margin:0;font-size:17px">${body}</p>
+      ${note ? `<p class="hint">${esc(note)}</p>` : ''}
+      <button class="btn light" id="again">ลงชื่อให้คนถัดไป</button></div></main>`;
+    $('#again').onclick = () => { save('quizlive.tester'); this.form(); };
+  }
+};
+
+// ---------- v14.2 ผู้จัด: รายชื่อที่ลงชื่อ · พิมพ์ใบลงชื่อ · Excel ----------
+const Attend = {
+  async load(c, rows) {
+    const ids = rows.map(r => r.id);
+    if (!ids.length) return [];
+    const { data, error } = await sb.from('attendance').select('*').in('training_id', ids).order('checkin_at', { ascending: true });
+    if (error) throw error;
+    const lab = Object.fromEntries(rows.map(r => [r.id, r]));
+    return (data || []).map(a => ({ ...a, round: lab[a.training_id] }));
+  },
+  async signUrls(list) {
+    const paths = [...new Set(list.flatMap(a => [a.checkin_sig, a.finish_sig]).filter(Boolean))];
+    const out = {};
+    for (let i = 0; i < paths.length; i += 100) {
+      const { data } = await sb.storage.from('signatures').createSignedUrls(paths.slice(i, i + 100), 3600);
+      (data || []).forEach(d => { if (d.signedUrl) out[d.path] = d.signedUrl; });
+    }
+    return out;
+  },
+  html(c, rows, list, f) {
+    const shown = list.filter(a => (!f.round || a.training_id === f.round)
+      && (!f.q || (a.emp_id + ' ' + a.full_name + ' ' + a.department).toLowerCase().includes(f.q.toLowerCase())));
+    const fin = stepOn(c, 'finish');
+    return `<div class="row" style="margin:14px 0 10px">
+        <select class="inp" id="at-round" style="width:auto;max-width:100%"><option value="">ทุกรอบ (${list.length} คน)</option>${rows.map(r =>
+          `<option value="${r.id}" ${f.round === r.id ? 'selected' : ''}>${esc(r.label)} (${list.filter(a => a.training_id === r.id).length})</option>`).join('')}</select>
+        <input class="search" id="at-q" placeholder="ค้นหารหัส / ชื่อ / แผนก" value="${esc(f.q || '')}">
+        <span class="grow"></span>
+        <button class="btn light sm" id="at-print" ${shown.length ? '' : 'disabled'}>🖨 พิมพ์ใบลงชื่อ</button>
+        <button class="btn light sm" id="at-xls" ${shown.length ? '' : 'disabled'}>⬇ ส่งออก Excel</button></div>
+      ${shown.length ? `<div class="tblwrap"><table class="rep"><thead><tr><th class="num">#</th><th>เวลา</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>แผนก</th><th>รพ.</th><th>รอบ</th><th>ที่มา</th><th>ลายเซ็น</th>${fin ? '<th>ลงชื่อจบ</th>' : ''}<th></th></tr></thead>
+        <tbody>${shown.map((a, i) => `<tr><td class="num">${i + 1}</td><td>${a.checkin_at ? thTime(a.checkin_at) : '–'}</td><td>${esc(a.emp_id)}</td>
+          <td>${esc(a.full_name)}</td><td>${esc(a.department)}</td><td>${esc(a.hospital || '')}</td><td style="white-space:normal;min-width:140px">${esc(a.round ? a.round.label : '')}</td>
+          <td>${a.walk_in ? '<span class="phase post">walk-in</span>' : '<span class="phase pre">จอง</span>'}</td>
+          <td>${a.checkin_sig ? `<img class="sigimg" data-sig="${esc(a.checkin_sig)}" alt="ลายเซ็น">` : '–'}</td>
+          ${fin ? `<td>${a.finish_at ? `${thTime(a.finish_at)} ${a.finish_sig ? `<img class="sigimg" data-sig="${esc(a.finish_sig)}" alt="ลายเซ็นจบ">` : ''}` : '–'}</td>` : ''}
+          <td><button class="btn danger sm" data-atdel="${a.id}" title="ลบรายการนี้">ลบ</button></td></tr>`).join('')}</tbody></table></div>`
+        : `<div class="empty">ยังไม่มีคนลงชื่อ${f.round || f.q ? 'ตามตัวกรอง' : ''}</div>`}`;
+  },
+  // ใบลงชื่อสำหรับพิมพ์ (หน้าต่างใหม่ · A4 แนวตั้ง · ลายเซ็นในแถว)
+  print(c, rows, list, urls, roundId) {
+    const groups = (roundId ? rows.filter(r => r.id === roundId) : rows).map(r => ({ r, items: list.filter(a => a.training_id === r.id) })).filter(g => g.items.length);
+    const fin = stepOn(c, 'finish');
+    const page = g => `<section class="pg"><h1>${esc(c.cert_title || c.title)}</h1>
+      <p class="sub">${esc(g.r.label)}${g.r.starts_at ? ' · ' + esc(thDate(g.r.starts_at, { year: 'numeric', weekday: 'long' })) + ' เวลา ' + esc(thTime(g.r.starts_at)) + (g.r.ends_at ? '–' + esc(thTime(g.r.ends_at)) : '') + ' น.' : ''}${c.location ? ' · ' + esc(c.location) : ''}</p>
+      <table><thead><tr><th style="width:34px">ลำดับ</th><th style="width:70px">รหัส</th><th>ชื่อ-สกุล</th><th>แผนก</th><th style="width:48px">เวลา</th><th style="width:130px">ลายเซ็น</th>${fin ? '<th style="width:130px">ลงชื่อจบ</th>' : ''}</tr></thead>
+      <tbody>${g.items.map((a, i) => `<tr><td class="c">${i + 1}</td><td class="c">${esc(a.emp_id)}</td><td>${esc(a.full_name)}</td><td>${esc(a.department)}</td>
+        <td class="c">${a.checkin_at ? esc(thTime(a.checkin_at)) : ''}</td><td class="s">${a.checkin_sig && urls[a.checkin_sig] ? `<img src="${esc(urls[a.checkin_sig])}">` : ''}</td>
+        ${fin ? `<td class="s">${a.finish_sig && urls[a.finish_sig] ? `<img src="${esc(urls[a.finish_sig])}">` : ''}</td>` : ''}</tr>`).join('')}</tbody></table>
+      <p class="foot">รวม ${g.items.length} คน · พิมพ์เมื่อ ${esc(new Date().toLocaleString('th-TH'))}</p></section>`;
+    const w = window.open('', '_blank');
+    if (!w) return toast('เบราว์เซอร์บล็อกหน้าต่างใหม่ · อนุญาตป๊อปอัปแล้วลองอีกครั้ง', true);
+    w.document.write(`<!doctype html><html lang="th"><head><meta charset="utf-8"><title>ใบลงชื่อ ${esc(c.title)}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+      <style>@page{size:A4;margin:12mm}body{font-family:'Sarabun',sans-serif;font-size:13px;color:#000;margin:0}
+      .pg{page-break-after:always}.pg:last-child{page-break-after:auto}h1{font-size:16px;text-align:center;margin:0 0 4px}
+      .sub{text-align:center;margin:0 0 10px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:2px 5px;vertical-align:middle}
+      th{background:#eee;font-weight:600}td.c{text-align:center}td.s{height:34px;padding:0;text-align:center}td.s img{max-height:32px;max-width:124px}
+      tr{page-break-inside:avoid}thead{display:table-header-group}.foot{font-size:11px;text-align:right;margin:6px 0 0}
+      .bar{position:sticky;top:0;background:#1e3a8a;color:#fff;padding:8px 12px;display:flex;gap:10px;align-items:center;font-family:sans-serif}
+      .bar button{font:inherit;padding:6px 14px;border-radius:8px;border:0;background:#fff;color:#1e3a8a;font-weight:600;cursor:pointer}
+      @media print{.bar{display:none}}</style></head><body>
+      <div class="bar"><span style="flex:1">ใบลงชื่อ · ${groups.length} รอบ · ${groups.reduce((n, g) => n + g.items.length, 0)} คน</span><button onclick="print()">พิมพ์ / บันทึก PDF</button></div>
+      ${groups.map(page).join('')}</body></html>`);
+    w.document.close();
+  },
+  async excel(c, rows, list) {
+    try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'); }
+    catch (e) { return toast('โหลดตัวสร้าง Excel ไม่ได้ ตรวจสอบอินเทอร์เน็ต', true); }
+    const X = window.XLSX, wb = X.utils.book_new(), fin = stepOn(c, 'finish');
+    const head = ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'แผนก', 'โรงพยาบาล', 'รอบ', 'วันที่', 'เวลาลงชื่อ', 'ที่มา'].concat(fin ? ['เวลาลงชื่อจบ'] : []);
+    const line = (a, i) => [i + 1, a.emp_id, a.full_name, a.department, a.hospital || '', a.round ? a.round.label : '',
+      a.checkin_at ? thDate(a.checkin_at, { year: 'numeric' }) : '', a.checkin_at ? thTime(a.checkin_at) : '', a.walk_in ? 'walk-in' : 'จอง']
+      .concat(fin ? [a.finish_at ? thTime(a.finish_at) : ''] : []);
+    const sheet = (name, items) => { const ws = X.utils.aoa_to_sheet([head, ...items.map(line)]);
+      ws['!cols'] = [6, 12, 26, 28, 18, 34, 14, 10, 9, 12].map(w => ({ wch: w }));
+      X.utils.book_append_sheet(wb, ws, name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)); };
+    sheet('ทั้งหมด', list);
+    rows.forEach((r, k) => { const it = list.filter(a => a.training_id === r.id); if (it.length) sheet(`${k + 1} ${r.label}`, it); });
+    X.writeFile(wb, `ลงชื่อ-${c.title}-${new Date().toISOString().slice(0, 10)}.xlsx`.replace(/[\\/:*?"<>|]/g, '_'));
   }
 };
 
