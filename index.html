@@ -517,6 +517,7 @@ table.crep tr.tot td{background:#f6f8fa}
 @media (max-width:760px){.cgrid{grid-template-columns:1fr}}
 .cgrid .tcard h3{margin:0;font-size:16px}
 .frm2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.switch.mini{display:inline-flex}
 .dbox{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:grid;gap:4px;font-size:14px}
 </style>
 </head>
@@ -2830,7 +2831,11 @@ const Course = {
     const used = STEPS.filter(([k]) => stepOn(c, k));
     const cell = (r, k) => { const v = r[STEP_KEY[k]] || 0;
       return k === 'booking' ? `<span>${v}${r.seats ? ' / ' + r.seats : ''}</span>${r.seats ? `<i class="bar"><i style="width:${Math.min(100, Math.round(v / r.seats * 100))}%"></i></i>` : ''}` : v; };
-    const tot = courseTotals(c, rows);
+    const tot = courseTotals(c, rows), bk = stepOn(c, 'booking');
+    const bkCell = r => {
+      const note = !c.booking_open ? 'งานปิดจอง' : r.booking_closed ? 'ปิดรุ่นนี้' : r.bookable ? 'เปิดรับ' : (r.seats && r.booked >= r.seats ? 'เต็ม' : 'หมดเวลาจอง');
+      return `<label class="switch mini" title="เปิด/ปิดรับจองเฉพาะรุ่นนี้"><input type="checkbox" data-bk="${r.id}" ${r.booking_closed ? '' : 'checked'} ${c.booking_open ? '' : 'disabled'}></label>
+        <div class="hint" style="white-space:nowrap">${note}</div>`; };
     const state = r => { const o = r.open || {}, on = ['checkin', 'pre', 'post', 'finish'].filter(k => o[k]);
       if (on.length) return `<span class="phase open">เปิด ${on.map(k => ({ checkin: 'ลงทะเบียน', pre: 'Pre', post: 'Post', finish: 'ลงชื่อจบ' })[k]).join(' · ')}</span>`;
       const end = r.starts_at && new Date(r.starts_at).getTime() + 3 * 3600e3 < Date.now();
@@ -2839,15 +2844,25 @@ const Course = {
       <div class="tcard">${stepTilesHTML(c, rows)}</div>
       <p class="hint" style="margin:14px 0 8px">ตัวเลข = จำนวนคนที่ผ่านขั้นนั้นแล้ว อ่านซ้ายไปขวาตามเส้นทางของผู้เข้าอบรม · กด “เปิดรุ่น” เพื่อคุมวันอบรม (เปิด-ปิดขั้น QR เกม Pre-test รายงาน)</p>
       ${rows.length ? `<div class="tblwrap"><table class="rep crep"><thead><tr><th>รุ่น</th><th>วันเวลา</th>
-          ${used.map(([k]) => `<th class="num">${STEPS.findIndex(s => s[0] === k) + 1} ${SHORT[k]}</th>`).join('')}<th>สถานะ</th><th></th></tr></thead>
+          ${used.map(([k]) => `<th class="num">${STEPS.findIndex(s => s[0] === k) + 1} ${SHORT[k]}</th>`).join('')}${bk ? '<th>รับจอง</th>' : ''}<th>สถานะ</th><th></th></tr></thead>
         <tbody>${rows.map(r => `<tr><td style="white-space:normal;min-width:150px"><b>${esc(r.label)}</b><div class="hint">รหัส ${esc(r.code)}</div></td>
           <td>${r.starts_at ? `${thDate(r.starts_at)} ${thTime(r.starts_at)}` : '<span class="hint">ยังไม่ระบุ</span>'}</td>
           ${used.map(([k]) => `<td class="num">${cell(r, k)}</td>`).join('')}
-          <td>${state(r)}</td><td><a class="btn sm" href="#training/${r.id}">เปิดรุ่น</a></td></tr>`).join('')}
-          <tr class="tot"><td><b>รวม</b></td><td></td>${used.map(([k]) => `<td class="num"><b>${tot[k]}${k === 'booking' && tot.seats ? ' / ' + tot.seats : ''}</b></td>`).join('')}<td></td><td></td></tr>
+          ${bk ? `<td>${bkCell(r)}</td>` : ''}<td>${state(r)}</td><td><a class="btn sm" href="#training/${r.id}">เปิดรุ่น</a></td></tr>`).join('')}
+          <tr class="tot"><td><b>รวม</b></td><td></td>${used.map(([k]) => `<td class="num"><b>${tot[k]}${k === 'booking' && tot.seats ? ' / ' + tot.seats : ''}</b></td>`).join('')}${bk ? '<td></td>' : ''}<td></td><td></td></tr>
         </tbody></table></div>` : '<div class="empty">ยังไม่มีรุ่น · เพิ่มรุ่นแรกได้ด้านล่าง</div>'}
+      ${bk && !c.booking_open ? '<p class="hint" style="margin-top:8px">งานนี้ยังปิดรับจองทั้งงาน · เปิดได้ที่แท็บ <b>ตั้งค่า</b> แล้วค่อยเลือกปิดเฉพาะรุ่นที่นี่</p>' : ''}
       ${this.addRoundHTML()}`;
     this.bindAddRound();
+    $$('[data-bk]', box).forEach(b => b.onchange = async () => {
+      const r = this.rows.find(x => x.id === b.dataset.bk), closed = !b.checked;
+      if (closed && r.booked && !confirm(`ปิดรับจอง ${r.label}?\nคนที่จองไว้แล้ว ${r.booked} คนยังอยู่ · คนใหม่จองรุ่นนี้ไม่ได้`)) { b.checked = true; return; }
+      b.disabled = true;
+      const { error } = await sb.from('trainings').update({ booking_closed: closed }).eq('id', r.id);
+      if (error) { toast(errMsg(error), true); b.checked = !closed; b.disabled = false; return; }
+      toast(closed ? `ปิดรับจอง ${r.label} แล้ว` : `เปิดรับจอง ${r.label} แล้ว`);
+      await this.loadRows(); this.renderBody();
+    });
   },
   addRoundHTML() {
     const c = this.c;
