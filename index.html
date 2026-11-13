@@ -264,6 +264,7 @@ details.dl{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.0
 .tblwrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:14px}
 table.rep{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
 table.rep th,table.rep td{padding:8px 10px;border-bottom:1px solid #eef0f3;text-align:left;white-space:nowrap}
+table.rep td.wrap{white-space:normal;min-width:130px;max-width:260px;overflow-wrap:anywhere}
 table.rep th{background:#f6f8fa;font-weight:600;position:sticky;top:0}
 table.rep td.num,table.rep th.num{text-align:right}
 table.rep tr.low td{background:#fff5f5}
@@ -3036,7 +3037,7 @@ const Course = {
       .concat([['report', 'รายงานรวม'], ['settings', 'ตั้งค่า'], ['team', `👥 ผู้จัดร่วม${(c.cohosts || []).length ? ` <span class="cnt">${c.cohosts.length}</span>` : ''}`], ['log', 'ประวัติ']]);
     app.innerHTML = adminShell(this.user, `
       <div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a>
-        <div class="grow" style="min-width:0"><h2 class="sec">${isNew ? 'สร้างงานอบรมใหม่' : esc(c.title)}</h2>
+        <div class="grow" style="min-width:0;flex:1 1 300px"><h2 class="sec" style="overflow-wrap:anywhere">${isNew ? 'สร้างงานอบรมใหม่' : esc(c.title)}</h2>
           ${isNew ? '' : `<div class="hint">${[courseRange(this.rows), (Array.isArray(c.hospitals) ? c.hospitals : this.hospitals).join(', '),
             this.rows.length ? `${this.rows.length} รุ่น${c.seats ? ' × ' + c.seats + ' ที่นั่ง' : ''}` : ''].filter(Boolean).map(esc).join(' · ')}</div>`}</div>
         ${isNew ? '' : `<div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="c-send" title="ส่งสรุปการเข้าอบรมและใบลงชื่อทางอีเมล">✉ ส่งสรุป</button>
@@ -3098,7 +3099,7 @@ const Course = {
       <p class="hint" style="margin:14px 0 8px">ตัวเลข = จำนวนคนที่ผ่านขั้นนั้นแล้ว อ่านซ้ายไปขวาตามเส้นทางของผู้เข้าอบรม · กด “เปิดรุ่น” เพื่อคุมวันอบรม (เปิด-ปิดขั้น QR เกม Pre-test รายงาน)</p>
       ${rows.length ? `<div class="tblwrap"><table class="rep crep"><thead><tr><th>รุ่น</th><th>วันเวลา</th>
           ${used.map(([k]) => `<th class="num">${STEPS.findIndex(s => s[0] === k) + 1} ${SHORT[k]}</th>`).join('')}${bk ? '<th>รับจอง</th>' : ''}${ck ? '<th>ลงชื่อ</th>' : ''}<th>สถานะ</th><th></th></tr></thead>
-        <tbody>${rows.map(r => `<tr><td style="white-space:normal;min-width:150px"><b>${esc(r.label)}</b><div class="hint">รหัส ${esc(r.code)}</div></td>
+        <tbody>${rows.map(r => `<tr><td class="wrap"><b>${esc(r.label)}</b><div class="hint">รหัส ${esc(r.code)}</div></td>
           <td>${r.starts_at ? `${thDate(r.starts_at)} ${thTime(r.starts_at)}` : '<span class="hint">ยังไม่ระบุ</span>'}</td>
           ${used.map(([k]) => `<td class="num">${cell(r, k)}</td>`).join('')}
           ${bk ? `<td>${bkCell(r)}</td>` : ''}${ck ? `<td>${ckCell(r)}</td>` : ''}<td>${state(r)}</td><td><a class="btn sm" href="#training/${r.id}">เปิดรุ่น</a></td></tr>`).join('')}
@@ -4017,11 +4018,11 @@ const Dash = {
         <div class="dk" style="margin-top:10px"><div class="b"><span>จองไว้</span><b>${s.booked}</b></div><div class="g"><span>จองและมา</span><b>${s.bookedCame}</b></div><div class="r"><span>จองแต่ไม่มา</span><b>${s.absent}</b></div>
           <div class="y"><span>ไม่จองแต่มา</span><b>${s.notBooked}</b></div><div class="v"><span>ลงทะเบียนหน้างาน</span><b>${s.walkin}</b></div><div class="n"><span>ผู้ลงชื่อรวม</span><b>${s.total}</b></div></div>
         ${tbl(['วัน/รอบ', 'จอง', 'จอง+มา', 'ไม่มา', 'ไม่จอง+มา', 'หน้างาน', 'รวม'].map((h, i) => i ? `<span style="display:block;text-align:right">${h}</span>` : h),
-          d.per.map(x => `<tr><td style="white-space:normal;min-width:150px">${x.r.starts_at ? esc(thDate(x.r.starts_at, { year: 'numeric' })) + '<br>' : ''}<span class="hint">${esc(x.r.label)}</span></td>
+          d.per.map(x => `<tr><td class="wrap">${x.r.starts_at ? esc(thDate(x.r.starts_at, { year: 'numeric' })) + '<br>' : ''}<span class="hint">${esc(x.r.label)}</span></td>
             <td class="num">${x.booked}</td><td class="num" style="color:#1b6b42">${x.bookedCame}</td><td class="num" style="color:#a32020">${x.absent}</td>
             <td class="num" style="color:#8a5a00">${x.notBooked}</td><td class="num" style="color:#3f3cbb">${x.walkin}</td><td class="num"><b>${x.total}</b></td></tr>`).join(''))}
         <details class="dl"><summary>รายชื่อจองแต่ไม่มา / ยังไม่ถึงเวลา (${d.lists.absent.length})</summary>
-          ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], d.lists.absent.map(a => person(a.p, `<td>${esc(a.r ? a.r.label : '')}</td><td style="${stc(a.state)}">${esc(a.state)}</td>`)).join(''))}</details>
+          ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], d.lists.absent.map(a => person(a.p, `<td class="wrap">${esc(a.r ? a.r.label : '')}</td><td style="${stc(a.state)}">${esc(a.state)}</td>`)).join(''))}</details>
         ${d.hasRoster ? `<details class="dl"><summary>รายชื่อลงทะเบียนหน้างาน (ไม่อยู่ในรายชื่อ) (${d.lists.walkin.length})</summary>
           ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่มา'], d.lists.walkin.map(p => person(p, `<td>${esc(rl(p))}</td>`)).join(''))}</details>` : ''}
         <details class="dl"><summary>รายชื่อไม่จองแต่มา (${d.lists.notBooked.length})</summary>
@@ -4073,15 +4074,15 @@ const Dash = {
         ${tbl(['แผนก', 'เป้าหมาย', 'จอง', 'เข้าอบรม', '%'], d.depts.map(x => `<tr><td><b>${esc(x.dept)}</b></td><td class="num">${x.target || '–'}</td><td class="num">${x.booked}</td><td class="num">${x.attended}</td>
           <td class="num ${x.percent != null && x.percent < 50 ? 'r' : 'g'}"><b>${x.percent == null ? '–' : x.percent + '%'}</b></td></tr>`), [1, 2, 3, 4])}
         ${(() => { const ab = d.lists.absent.filter(a => a.state !== 'ยังไม่ถึงเวลา'); return ab.length ? `<h3>จองแล้วแต่ไม่ได้ลงชื่อ (${ab.length} คน)</h3>` +
-          tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], ab.map(a => person(a.p, `<td>${esc(a.r ? a.r.label : '')}</td><td class="${stc(a.state)}"><b>${esc(a.state)}</b></td>`))) : ''; })()}</section>`;
+          tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], ab.map(a => person(a.p, `<td class="wrap">${esc(a.r ? a.r.label : '')}</td><td class="${stc(a.state)}"><b>${esc(a.state)}</b></td>`))) : ''; })()}</section>`;
     } else {
       body = `<section class="sec"><h2><span class="ic">📅</span> รายงานรายวัน / รายรอบ <small>${esc(this.scopeLabel(C))}</small></h2>
         <div class="dk">${tile('b', 'จองไว้', s.booked)}${tile('g', 'จองและมา', s.bookedCame)}${tile('r', 'จองแต่ไม่มา', s.absent)}
           ${tile('y', 'ไม่จองแต่มา', s.notBooked)}${tile('v', 'ลงทะเบียนหน้างาน', s.walkin)}${tile('n', 'ผู้ลงชื่อรวม', s.total)}</div>
-        ${tbl(['วัน/รอบ', 'จอง', 'จอง+มา', 'ไม่มา', 'ไม่จอง+มา', 'หน้างาน', 'รวม'], d.per.map(x => `<tr><td>${x.r.starts_at ? esc(thDate(x.r.starts_at, { year: 'numeric' })) + '<br>' : ''}<span class="m">${esc(x.r.label)}</span></td>
+        ${tbl(['วัน/รอบ', 'จอง', 'จอง+มา', 'ไม่มา', 'ไม่จอง+มา', 'หน้างาน', 'รวม'], d.per.map(x => `<tr><td class="wrap">${x.r.starts_at ? esc(thDate(x.r.starts_at, { year: 'numeric' })) + '<br>' : ''}<span class="m">${esc(x.r.label)}</span></td>
           <td class="num">${x.booked}</td><td class="num g">${x.bookedCame}</td><td class="num r">${x.absent}</td><td class="num y">${x.notBooked}</td><td class="num v">${x.walkin}</td><td class="num"><b>${x.total}</b></td></tr>`), [1, 2, 3, 4, 5, 6])}
         <h3>รายชื่อจองแต่ไม่มา / ยังไม่ถึงเวลา (${d.lists.absent.length})</h3>
-        ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], d.lists.absent.map(a => person(a.p, `<td>${esc(a.r ? a.r.label : '')}</td><td class="${stc(a.state)}"><b>${esc(a.state)}</b></td>`)))}
+        ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], d.lists.absent.map(a => person(a.p, `<td class="wrap">${esc(a.r ? a.r.label : '')}</td><td class="${stc(a.state)}"><b>${esc(a.state)}</b></td>`)))}
         <h3>รายชื่อลงทะเบียนหน้างาน (ไม่อยู่ในรายชื่อ) (${d.lists.walkin.length})</h3>
         ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่มา'], d.lists.walkin.map(p => person(p, `<td>${esc(rl(p))}</td>`)))}
         <h3>รายชื่อไม่จองแต่มา (${d.lists.notBooked.length})</h3>
@@ -4282,10 +4283,10 @@ const People = {
       ${shown.length ? `<div class="tblwrap"><table class="rep"><thead><tr><th class="num">#</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>แผนก</th><th>รพ.</th><th>รอบที่จอง</th><th>สถานะ</th><th></th></tr></thead>
         <tbody>${shown.slice(0, 500).map((p, i) => { const s = this.status(p, rows);
           return `<tr><td class="num">${i + 1}</td><td>${esc(p.emp_id)}</td><td>${esc(p.name)}${p.in_roster ? '' : ' <span class="hint" title="ไม่อยู่ในรายชื่อ (จอง/ลงชื่อเอง)">•</span>'}</td>
-          <td>${esc(p.dept)}</td><td>${esc(p.hospital)}</td>
-          <td><select class="inp" data-ppbk="${esc(p.key)}" style="padding:4px 6px;min-width:150px">${opt('', '— ไม่จอง —', p.booking ? p.booking.training_id : '')}${rows.map(r =>
+          <td class="wrap">${esc(p.dept)}</td><td>${esc(p.hospital)}</td>
+          <td><select class="inp" data-ppbk="${esc(p.key)}" style="padding:4px 6px;min-width:150px;max-width:230px">${opt('', '— ไม่จอง —', p.booking ? p.booking.training_id : '')}${rows.map(r =>
             opt(r.id, r.label + (r.seats && r.booked >= r.seats ? ' (เต็ม)' : ''), p.booking ? p.booking.training_id : '')).join('')}</select></td>
-          <td><span class="phase ${st[s.k]}">${s.t}</span>${p.attended.length ? `<div class="hint">${p.attended.map(a => esc(lab[a.training_id] || '')).join(', ')}</div>` : ''}</td>
+          <td class="wrap" style="min-width:110px"><span class="phase ${st[s.k]}">${s.t}</span>${p.attended.length ? `<div class="hint">${p.attended.map(a => esc(lab[a.training_id] || '')).join(', ')}</div>` : ''}</td>
           <td style="white-space:nowrap"><button class="btn light sm" data-ppedit="${esc(p.key)}">แก้ไข</button> <button class="btn danger sm" data-pprm="${esc(p.key)}" title="เอาออกจากรายชื่อ">ลบ</button></td></tr>`; }).join('')}</tbody></table></div>
         ${shown.length > 500 ? `<p class="hint">แสดง 500 คนแรก · ค้นหาหรือกรองเพื่อดูคนอื่น</p>` : ''}`
         : `<div class="empty">ไม่มีรายชื่อ${f.round || f.q || f.dept || f.st ? 'ตามตัวกรอง' : ' · เพิ่มคนหรืออัปโหลดรายชื่อที่แท็บตั้งค่า'}</div>`}`;
@@ -4368,7 +4369,7 @@ const Attend = {
           : '<p class="hint" style="margin:0">ลืมลงชื่อ? เลือกรอบด้านบนแล้วสร้าง “ลิงก์ลงชื่อย้อนหลัง” ของรอบนั้น</p>'}</div>
       ${shown.length ? `<div class="tblwrap"><table class="rep"><thead><tr><th class="num">#</th><th>เวลา</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>แผนก</th><th>รพ.</th><th>รอบ</th><th>ที่มา</th><th>ลายเซ็น</th>${fin ? '<th>ลงชื่อจบ</th>' : ''}<th></th></tr></thead>
         <tbody>${shown.map((a, i) => `<tr><td class="num">${i + 1}</td><td>${a.checkin_at ? thTime(a.checkin_at) : '–'}</td><td>${esc(a.emp_id)}</td>
-          <td>${esc(a.full_name)}</td><td>${esc(a.department)}</td><td>${esc(a.hospital || '')}</td><td style="white-space:normal;min-width:140px">${esc(a.round ? a.round.label : '')}</td>
+          <td>${esc(a.full_name)}</td><td>${esc(a.department)}</td><td>${esc(a.hospital || '')}</td><td class="wrap">${esc(a.round ? a.round.label : '')}</td>
           <td>${a.walk_in ? '<span class="phase post">walk-in</span>' : '<span class="phase pre">จอง</span>'}${a.late ? ' <span class="phase late">ย้อนหลัง</span>' : ''}${a.source === 'sheet' ? ' <span class="hint" title="นำเข้าจากระบบลงทะเบียนเดิม (Google Sheet)">ระบบเดิม</span>' : ''}</td>
           <td>${a.checkin_sig ? `<img class="sigimg" data-sig="${esc(a.checkin_sig)}" alt="ลายเซ็น">` : '–'}</td>
           ${fin ? `<td>${a.finish_at ? `${thTime(a.finish_at)} ${a.finish_sig ? `<img class="sigimg" data-sig="${esc(a.finish_sig)}" alt="ลายเซ็นจบ">` : ''}` : '–'}</td>` : ''}
@@ -4796,7 +4797,7 @@ const Report = {
     const title = !c.length ? 'รายงานรวมหลายรอบ' : series.length === 1 ? series[0] : `${c.length} รอบ`;
     if (this.view && !c.some(t => t.id === this.view)) this.view = '';
     app.innerHTML = adminShell(this.user, `
-      ${this.course ? `<div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a><h2 class="sec grow">${esc(this.course.title)}</h2>
+      ${this.course ? `<div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a><h2 class="sec grow" style="min-width:0;flex:1 1 300px;overflow-wrap:anywhere">${esc(this.course.title)}</h2>
           ${c.length ? `<button class="btn light sm" id="xls">⬇ ส่งออก Excel</button>` : ''}</div>
         <nav class="secnav sm" aria-label="ส่วนของงานอบรม"><a href="#course/${this.course.id}">รุ่น <span class="cnt">${c.length}</span></a>
           <a href="#course/${this.course.id}:dash">📊 สรุปผล</a><a href="#course/${this.course.id}:people">ผู้เข้าร่วม</a><a href="#course/${this.course.id}:attend">ลงชื่อ</a>
