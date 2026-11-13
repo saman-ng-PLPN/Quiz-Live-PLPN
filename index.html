@@ -613,6 +613,14 @@ details.dl[open] summary{color:var(--navy2)}
 .lgcard .btn{width:100%}
 .lgback{color:var(--navy2);font-size:14px}
 @media (max-width:480px){.lgtop .brand{font-size:28px}.lgtop .hlogo img{height:28px}}
+
+/* รายงานรวม / หน้ารุ่น: แท็บและกล่องตัวเลขมีสี */
+body.admin .tabs{background:#dcecfa}
+body.admin .tabs button.on{background:#fff;color:var(--navy2);box-shadow:0 1px 3px rgba(15,85,146,.15)}
+body.admin #tbody > .tblwrap, body.admin #tbody > .tiles4{background:#fff;border-radius:16px;padding:12px;border:1px solid #e3eef8}
+body.admin .stile{border-color:#d9e9f7;background:linear-gradient(180deg,#fff,#f3f9fe)}
+body.admin .stile:nth-child(3n+1){background:#e6f3fd;border-color:#c5e3f8}body.admin .stile:nth-child(3n+2){background:#e9f8ef;border-color:#cdeedb}body.admin .stile:nth-child(3n){background:#fff7e3;border-color:#f5e3b5}
+body.admin .stile strong{color:var(--navy2)}
 </style>
 </head>
 <body>
@@ -4652,7 +4660,9 @@ const Report = {
       ${this.course ? `<div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a><h2 class="sec grow">${esc(this.course.title)}</h2>
           ${c.length ? `<button class="btn light sm" id="xls">⬇ ส่งออก Excel</button>` : ''}</div>
         <nav class="secnav sm" aria-label="ส่วนของงานอบรม"><a href="#course/${this.course.id}">รุ่น <span class="cnt">${c.length}</span></a>
-          <a class="on" href="#report/c=${this.course.id}" aria-current="page">รายงานรวม</a><a href="#course/${this.course.id}:settings">ตั้งค่า</a></nav>`
+          <a href="#course/${this.course.id}:dash">📊 สรุปผล</a><a href="#course/${this.course.id}:people">ผู้เข้าร่วม</a><a href="#course/${this.course.id}:attend">ลงชื่อ</a>
+          <a class="on" href="#report/c=${this.course.id}" aria-current="page">รายงานรวม</a><a href="#course/${this.course.id}:settings">ตั้งค่า</a>
+          <a href="#course/${this.course.id}:team">👥 ผู้จัดร่วม</a><a href="#course/${this.course.id}:log">ประวัติ</a></nav>`
       : `<div class="row"><a class="btn light sm" href="${this.backHref()}">← ${this.backHref() === '#admin' ? 'กลับ' : 'ทุกรุ่น'}</a><h2 class="sec grow">📊 ${esc(title)}</h2>
         ${c.length ? `<button class="btn light sm" id="xls">⬇ ส่งออก Excel</button>` : ''}</div>`}
       <details class="tcard" id="pick" ${c.length ? '' : 'open'} ${this.course ? 'hidden' : ''}><summary style="cursor:pointer;font-weight:600">เลือกรอบที่จะรวม · เลือกแล้ว ${c.length} รอบ</summary>
@@ -4693,17 +4703,20 @@ const Report = {
     const passes = [...new Set(trs.map(t => t.pass_percent))], passTxt = passes.length === 1 ? passes[0] + '%' : 'ของแต่ละรอบ';
     const multiH = c.hosps.length > 1 || (c.hosps[0] && c.hosps[0].hosp);
     if (this.tab === 'sum') {
-      box.innerHTML = `<div class="tiles4">
-        <div class="stile"><small>ทำ Pre-test</small><strong>${c.pres.length}</strong> <em>คน</em></div>
-        <div class="stile"><small>ทำ Post-test</small><strong>${c.posts.length}</strong> <em>คน</em></div>
-        <div class="stile"><small>ทำครบทั้ง 2 ครั้ง</small><strong>${c.both.length}</strong> <em>คน</em></div>
-        <div class="stile"><small>คะแนนเฉลี่ย Pre</small><strong>${dash(c.preAvg)}</strong><em>%</em></div>
-        <div class="stile"><small>คะแนนเฉลี่ย Post (ครั้งแรก)</small><strong>${dash(c.postAvg)}</strong><em>%</em></div>
-        <div class="stile"><small>เพิ่มขึ้นเฉลี่ย (คนที่ทำครบ)</small><strong>${sgn(c.gain)}</strong><em>%</em></div>
-        <div class="stile"><small>ผ่านเกณฑ์ ${passTxt} แล้ว</small><strong>${c.passN}</strong> <em>/ ${c.posts.length} คน</em></div>
-        <div class="stile"><small>ผ่านในครั้งแรก</small><strong>${c.passFirstN}</strong> <em>คน${c.posts.length ? ` · ${Math.round(100 * c.passFirstN / c.posts.length)}%` : ''}</em></div>
-        ${svId ? `<div class="stile"><small>ทำแบบประเมินแล้ว</small><strong>${c.surveyN}</strong> <em>/ ${c.passN} คนที่ผ่าน</em></div>` : ''}</div>
-        <h3 style="margin:18px 0 8px">เปรียบเทียบรายรอบ</h3>
+      const pPct = c.posts.length ? Math.round(100 * c.passN / c.posts.length) : null;
+      box.innerHTML = `<div class="dhero" style="margin-top:0"><div class="row" style="margin:0 0 12px"><div class="grow"><h3>📈 รายงานผลแบบทดสอบ Pre / Post</h3>
+          <span class="hint">${esc(this.view ? roundName(trs[0]) : (many ? trs.length + ' รอบ' : roundName(trs[0])))} · เกณฑ์ผ่าน ${esc(passTxt)}</span></div></div>
+        <div class="dk"><div><span>ทำ Pre-test</span><b>${c.pres.length}</b><small>คน</small></div><div><span>ทำ Post-test</span><b>${c.posts.length}</b><small>คน</small></div>
+          <div class="g"><span>ผ่านเกณฑ์แล้ว</span><b>${c.passN}${c.posts.length ? ' / ' + c.posts.length : ''}</b><small>${pPct == null ? 'ยังไม่มีคนทำ Post' : pPct + '% ของคนที่ทำ Post'}</small></div></div>
+        <p class="line">ทำครบทั้ง 2 ครั้ง <b>${c.both.length}</b> คน · ผ่านในครั้งแรก <b>${c.passFirstN}</b> คน${svId ? ` · ทำแบบประเมินแล้ว <b>${c.surveyN}</b> / ${c.passN} คน` : ''}</p></div>
+        <section class="dsec"><h3><span class="ic">🎯</span> คะแนน</h3>
+          <div class="dk"><div class="n"><span>คะแนนเฉลี่ย Pre</span><b>${dash(c.preAvg)}${c.preAvg == null ? '' : '%'}</b></div>
+            <div class="b"><span>คะแนนเฉลี่ย Post (ครั้งแรก)</span><b>${dash(c.postAvg)}${c.postAvg == null ? '' : '%'}</b></div>
+            <div class="${c.gain == null || c.gain >= 0 ? 'g' : 'r'}"><span>เพิ่มขึ้นเฉลี่ย</span><b>${c.gain == null ? '–' : (c.gain >= 0 ? '+' : '') + c.gain + '%'}</b><small>เฉพาะคนที่ทำครบ</small></div>
+            <div class="g"><span>ผ่านเกณฑ์แล้ว</span><b>${c.passN}</b><small>จาก ${c.posts.length} คนที่ทำ Post</small></div>
+            <div class="v"><span>ผ่านในครั้งแรก</span><b>${c.passFirstN}</b><small>${c.posts.length ? Math.round(100 * c.passFirstN / c.posts.length) + '%' : ''}</small></div>
+            ${svId ? `<div class="y"><span>ทำแบบประเมินแล้ว</span><b>${c.surveyN}</b><small>จาก ${c.passN} คนที่ผ่าน</small></div>` : `<div class="y"><span>ยังไม่ผ่าน</span><b>${Math.max(0, c.posts.length - c.passN)}</b><small>คน</small></div>`}</div></section>
+        <section class="dsec alt"><h3><span class="ic">📋</span> เปรียบเทียบรายรอบ</h3>
         <div class="tblwrap"><table class="rep"><tr><th>รอบ</th><th>รหัส</th><th>สถานะ</th><th class="num">Pre (คน)</th><th class="num">Post (คน)</th>
           <th class="num">เฉลี่ย Pre %</th><th class="num">เฉลี่ย Post %</th><th class="num">เพิ่มขึ้น</th><th class="num">ผ่านแล้ว</th><th></th></tr>
           ${c.rounds.map(r => `<tr><td><a href="#" data-view="${r.t.id}">${esc(roundName(r.t))}</a></td><td>${esc(r.t.code)}</td>
@@ -4714,7 +4727,7 @@ const Report = {
           ${many ? `<tr style="font-weight:700"><td>รวม</td><td></td><td></td><td class="num">${c.pres.length}</td><td class="num">${c.posts.length}</td>
             <td class="num">${dash(c.preAvg)}</td><td class="num">${dash(c.postAvg)}</td><td class="num">${sgn(c.gain)}</td>
             <td class="num">${c.posts.length ? `${c.passN}/${c.posts.length} (${Math.round(100 * c.passN / c.posts.length)}%)` : '–'}</td><td></td></tr>` : ''}
-        </table></div><p class="hint">แตะชื่อรอบเพื่อดูเฉพาะรอบนั้น · Post ใช้ผลครั้งแรก · “ผ่านแล้ว” ใช้ผลล่าสุด</p>`;
+        </table></div><p class="hint">แตะชื่อรอบเพื่อดูเฉพาะรอบนั้น · Post ใช้ผลครั้งแรก · “ผ่านแล้ว” ใช้ผลล่าสุด</p></section>`;
       $$('[data-view]', box).forEach(a => a.onclick = e => { e.preventDefault(); this.view = a.dataset.view; $('#view').value = this.view; this.renderBody(); });
     } else if (this.tab === 'people') {
       const k = this.q.toLowerCase(), list = c.rows.filter(r => !k || (r.emp_id + r.name + r.dept + (r.hosp || '') + roundName(r.t)).toLowerCase().includes(k));
