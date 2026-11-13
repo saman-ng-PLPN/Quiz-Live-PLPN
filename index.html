@@ -1164,7 +1164,12 @@ const Admin = {
   },
   courseSecHTML() {
     const u = this.user;
-    const cards = this.courses.map(c => courseCardHTML(c, this.sums[c.id] || [], this.hospitals)).join('');
+    const openC = this.courses.filter(c => !c.closed_at), closedC = this.courses.filter(c => c.closed_at);
+    const cards = openC.map(c => courseCardHTML(c, this.sums[c.id] || [], this.hospitals)).join('')
+      + (closedC.length ? `<details class="live closedc" style="background:#fff;border-color:var(--line);margin-top:16px"><summary style="cursor:pointer;font-weight:600">🔒 งานที่ปิดแล้ว (${closedC.length})</summary>
+          ${closedC.map(c => { const r = this.sums[c.id] || []; return `<div class="it" style="border-color:var(--line);flex-wrap:wrap"><span class="grow" style="min-width:200px"><b>${esc(c.title)}</b>
+            <br><small class="hint">${esc([courseRange(r), r.length ? r.length + ' รุ่น' : '', 'ปิดเมื่อ ' + thDate(c.closed_at, { year: '2-digit' })].filter(Boolean).join(' · '))}</small></span>
+            <a class="btn light sm" href="#course/${c.id}:dash">สรุปผล</a><a class="btn sm" href="#course/${c.id}">เปิดดู ›</a></div>`; }).join('')}</details>` : '');
     const loose = this.trainingGroups().filter(g => !(g.single ? g.single.course_id : g.items[0].course_id));
     const looseHTML = loose.length ? `<details class="live" style="background:#fff;border-color:var(--line)" ${this.courses.length ? '' : 'open'}>
         <summary style="cursor:pointer;font-weight:600">รอบ Pre/Post ที่ยังไม่อยู่ในงานอบรม (${loose.reduce((n, g) => n + (g.single ? 1 : g.items.length), 0)})</summary>
@@ -3018,12 +3023,21 @@ const Course = {
         <div class="grow" style="min-width:0"><h2 class="sec">${isNew ? 'สร้างงานอบรมใหม่' : esc(c.title)}</h2>
           ${isNew ? '' : `<div class="hint">${[courseRange(this.rows), (Array.isArray(c.hospitals) ? c.hospitals : this.hospitals).join(', '),
             this.rows.length ? `${this.rows.length} รุ่น${c.seats ? ' × ' + c.seats + ' ที่นั่ง' : ''}` : ''].filter(Boolean).map(esc).join(' · ')}</div>`}</div>
-        ${isNew ? '' : '<button class="btn sm" id="c-send" title="ส่งสรุปการเข้าอบรมและใบลงชื่อทางอีเมล">✉ ส่งสรุป</button>'}</div>
+        ${isNew ? '' : `<div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn sm" id="c-send" title="ส่งสรุปการเข้าอบรมและใบลงชื่อทางอีเมล">✉ ส่งสรุป</button>
+          <button class="btn light sm" id="c-copy" title="คัดลอกการตั้งค่าและโครงรอบไปเป็นงานใหม่ (เช่น อบรมประจำปี)">📋 คัดลอกเป็นงานใหม่</button>
+          ${c.closed_at ? '<button class="btn light sm" id="c-reopen">🔓 เปิดงานอีกครั้ง</button>' : '<button class="btn light sm" id="c-close" title="ปิดทุกสวิตช์ และย้ายไปหัวข้องานที่ปิดแล้ว">🔒 ปิดงาน</button>'}</div>`}</div>
+      ${c.closed_at ? `<div class="notice" style="margin-top:10px">🔒 <b>งานนี้ปิดแล้ว</b> เมื่อ ${esc(thDate(c.closed_at, { year: 'numeric' }))} ${esc(thTime(c.closed_at))} น.${c.closed_by ? ' โดย ' + esc(c.closed_by) : ''}
+        · ลิงก์/QR ของงานจะแจ้งผู้เข้าร่วมว่าปิดแล้ว · ดูรายงาน พิมพ์ ส่งออก และส่งสรุปได้ตามปกติ</div>` : ''}
       ${tabs.length ? `<nav class="secnav sm" aria-label="ส่วนของงานอบรม">${tabs.map(([k, t]) =>
         `<button data-ctab="${k}" class="${this.tab === k ? 'on' : ''}">${t}</button>`).join('')}</nav>` : ''}
       <div id="cbody"></div>`);
     bindShell();
     if ($('#c-send')) $('#c-send').onclick = () => SendReport.dialog(this);
+    if ($('#c-copy')) $('#c-copy').onclick = () => CourseLife.copy(this);
+    if ($('#c-close')) $('#c-close').onclick = () => CourseLife.close(this);
+    if ($('#c-reopen')) $('#c-reopen').onclick = async () => {
+      if (!confirm('เปิดงานนี้อีกครั้ง?\nสวิตช์ทุกรอบยังปิดอยู่ · เปิดเองทีละรอบเมื่อจะใช้')) return;
+      try { await rpc('close_course', { p_course: c.id, p_close: false }); c.closed_at = null; toast('เปิดงานแล้ว'); this.render(); } catch (e) { toast(errMsg(e), true); } };
     $$('[data-ctab]').forEach(b => b.onclick = () => {
       if (b.dataset.ctab === 'report') { location.hash = '#report/c=' + c.id; return; }
       this.tab = b.dataset.ctab; history.replaceState(null, '', '#course/' + c.id + ':' + this.tab); this.render(); });
@@ -3373,7 +3387,7 @@ const Course = {
             <p class="hint">ผู้เข้าร่วมเลือกแผนกจากรายการนี้ หรือเลือก “อื่นๆ” แล้วพิมพ์เองได้</p></div>
           <div class="fld"><label>รายชื่อผู้เข้าร่วม (ใส่รหัสแล้วเติมชื่อ-แผนกให้)</label>
             <div class="rosterbox"><span class="grow" id="c-rinfo">${c.roster_source ? 'กำลังโหลด…' : 'ยังไม่มีรายชื่อ · ผู้เข้าร่วมกรอกชื่อ-แผนกเอง'}</span>
-              ${c.id ? `<label class="btn light sm">⬆ อัปโหลดรายชื่อ<input type="file" id="c-rfile" accept=".xlsx,.xls,.csv" hidden></label>` : ''}</div>
+              ${c.id ? `<button class="btn light sm" type="button" id="c-rtpl">⬇ ไฟล์ตัวอย่าง</button><label class="btn light sm">⬆ อัปโหลดรายชื่อ<input type="file" id="c-rfile" accept=".xlsx,.xls,.csv" hidden></label>` : ''}</div>
             ${c.id ? '' : '<p class="hint">อัปโหลดรายชื่อได้หลังสร้างงาน หรือใช้แท็บ “อัปโหลดจากไฟล์”</p>'}
             ${c.roster_source && !/^course:/.test(c.roster_source) ? `<p class="hint">ใช้รายชื่อจากระบบเดิม (${esc(c.roster_source === 'codegray' ? 'Code Gray · Google Sheet ระบบจอง' : c.roster_source)}) · อัปโหลดใหม่จะแทนที่</p>` : ''}</div>
         </section>
@@ -3393,6 +3407,7 @@ const Course = {
         if (!st.depts.length) return toast('ยังไม่มีแผนกในรายชื่อผู้เข้าร่วม', true);
         const cur = dl.value.split('\n').map(x => x.trim()).filter(Boolean); dl.value = [...new Set([...cur, ...st.depts])].join('\n'); dcount();
         toast(`เพิ่มแผนกจากรายชื่อแล้ว · กดบันทึกการตั้งค่า`); } catch (e) { toast(errMsg(e), true); } };
+    if ($('#c-rtpl')) $('#c-rtpl').onclick = () => CourseLife.rosterTemplate();
     if ($('#c-rfile')) $('#c-rfile').onchange = async e => {
       const f = e.target.files[0]; if (!f) return;
       try { const d = Imp.parse(await Imp.readFile(f));
@@ -3531,6 +3546,8 @@ const Entry = {
     try { this.info = late ? await rpc('late_info', { p_token: late }) : await rpc('course_info', { p_code: code }); if (late) this.code = this.info.code; }
     catch (e) { app.innerHTML = `<div class="center-msg"><div class="box"><h2>${esc(errMsg(e))}</h2><a class="btn" href="./">กลับหน้าแรก</a></div></div>`; return; }
     const i = this.info, ci = (i.rounds || []).filter(r => r.checkin_open);
+    if (i.closed) { app.innerHTML = `<main class="tst">${this.head('<span class="phase">ปิดแล้ว</span>')}<div class="tcard" style="text-align:center">
+        <div style="font-size:44px">🔒</div><h2 style="margin:0">งานอบรมนี้ปิดแล้ว</h2><p class="hint" style="margin:0">ขอบคุณที่เข้าร่วม · หากต้องการลงชื่อย้อนหลัง ติดต่อผู้จัด</p></div></main>`; return; }
     this.mode = ci.length ? 'checkin' : i.booking_open && (i.rounds || []).some(r => r.open) ? 'booking' : '';
     this.form();
   },
@@ -3812,6 +3829,109 @@ const Mailer = {
 };
 
 
+
+
+// ---------- v15.1 ปิดงาน / คัดลอกเป็นงานใหม่ (อบรมประจำปี) ----------
+const CourseLife = {
+  modal(html) { const d = document.createElement('div'); d.className = 'pmodal'; d.innerHTML = html; document.body.appendChild(d);
+    d.onclick = e => { if (e.target === d) d.remove(); }; return d; },
+  close(C) {
+    const c = C.c, openN = C.rows.filter(r => Object.values(r.open || {}).some(Boolean)).length;
+    const d = this.modal(`<form class="box" style="max-width:500px;width:100%;text-align:left;display:grid;gap:12px">
+      <h3 style="margin:0">🔒 ปิดงานอบรม</h3><p style="margin:0"><b>${esc(c.title)}</b></p>
+      <ul class="hint" style="margin:0;padding-left:20px;line-height:1.7"><li>ปิดทุกสวิตช์ทุกรอบ: รับจอง · ลงชื่อ · Pre/Post · ลงชื่อจบ · ลิงก์ลงชื่อย้อนหลัง${openN ? ` <b>(ตอนนี้เปิดอยู่ ${openN} รอบ)</b>` : ''}</li>
+        <li>ลิงก์/QR ของงานจะแจ้งผู้เข้าร่วมว่า “งานนี้ปิดแล้ว”</li><li>งานย้ายไปหัวข้อ “งานที่ปิดแล้ว” ในหน้าแรก</li>
+        <li>ข้อมูลอยู่ครบ ดูสรุปผล รายงาน พิมพ์ ส่งออก และส่งสรุปได้ตามปกติ · เปิดงานอีกครั้งได้</li></ul>
+      <label class="switch"><input type="checkbox" id="cl-mail"> ส่งสรุปปิดงานทางอีเมลต่อเลย (เลือกผู้รับในขั้นถัดไป)</label>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn light" data-x>ยกเลิก</button><button class="btn sun">ปิดงาน</button></div></form>`);
+    d.querySelector('[data-x]').onclick = () => d.remove();
+    d.querySelector('form').onsubmit = async e => { e.preventDefault(); const mail = d.querySelector('#cl-mail').checked, b = d.querySelector('.btn.sun'); b.disabled = true;
+      try { await rpc('close_course', { p_course: c.id, p_close: true }); d.remove(); toast('ปิดงานแล้ว');
+        const r = await sb.from('courses').select('*').eq('id', c.id).single(); if (r.data) C.c = r.data; await C.loadRows(); C.render();
+        if (mail) SendReport.dialog(C);
+      } catch (er) { toast(errMsg(er), true); b.disabled = false; } };
+  },
+  bumpYear(t) { return t.replace(/(25\d\d|20\d\d)(?!.*(25\d\d|20\d\d))/, y => String(+y + 1)); },
+  day(s) { return s ? new Date(new Date(s).getTime() + 7 * 3600e3).toISOString().slice(0, 10) : ''; },
+  copy(C) {
+    const c = C.c, rows = C.rows, me = (C.user.email || '').toLowerCase();
+    const first = rows.map(r => this.day(r.starts_at)).filter(Boolean).sort()[0] || '';
+    const next = first ? `${+first.slice(0, 4) + 1}${first.slice(4)}` : '';
+    const co = [c.owner_email, ...(c.cohosts || [])].map(x => (x || '').toLowerCase()).filter(x => x && x !== me);
+    const d = this.modal(`<form class="box" style="max-width:560px;width:100%;text-align:left;display:grid;gap:12px" autocomplete="off">
+      <h3 style="margin:0">📋 คัดลอกเป็นงานใหม่</h3>
+      <p class="hint" style="margin:0">คัดลอก: ตั้งค่างาน ขั้นตอน ชุดคำถาม เกณฑ์ผ่าน แบบประเมิน แผนก รพ. ที่นั่ง และโครงรอบ (${rows.length} รอบ)
+        · <b>ไม่คัดลอก</b> รายชื่อ การจอง การลงชื่อ ผลสอบ</p>
+      <div class="fld"><label for="cp-title">ชื่องานใหม่</label><input class="inp" id="cp-title" maxlength="200" value="${esc(this.bumpYear(c.title))}"></div>
+      ${first ? `<div class="fld"><label for="cp-start">วันเริ่มอบรม (รอบแรก)</label><input class="inp" id="cp-start" type="date" value="${next}" style="max-width:220px">
+        <p class="hint" style="margin:0">ทุกรอบเลื่อนตามระยะห่างเดิม เวลาเดิม · งานเดิมเริ่ม ${esc(thDate(first + 'T05:00:00Z', { year: 'numeric', weekday: 'short' }))}</p></div>
+        <div class="hint" id="cp-prev" style="max-height:150px;overflow:auto;background:var(--blue-soft);border-radius:10px;padding:8px 12px"></div>`
+        : '<p class="hint" style="margin:0">งานเดิมไม่ได้ระบุวันที่รอบ · รอบใหม่จะไม่มีวันที่ ตั้งได้ภายหลัง</p>'}
+      <div class="fld"><label class="switch"><input type="checkbox" id="cp-co" checked> คัดลอกผู้จัดร่วม (แก้ไขได้)</label>
+        <textarea class="inp" id="cp-coemails" rows="3" placeholder="อีเมล @${esc(CFG.ALLOWED_DOMAIN || '')} บรรทัดละ 1 คน">${esc(co.join('\n'))}</textarea>
+        <p class="hint" style="margin:0">คุณเป็นเจ้าของงานใหม่${co.includes((c.owner_email || '').toLowerCase()) ? ' · เจ้าของงานเดิมอยู่ในรายชื่อผู้จัดร่วม' : ''}</p></div>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn light" data-x>ยกเลิก</button><button class="btn sun">สร้างงานใหม่</button></div></form>`);
+    const q = x => d.querySelector(x);
+    q('[data-x]').onclick = () => d.remove();
+    q('#cp-co').onchange = () => { q('#cp-coemails').disabled = !q('#cp-co').checked; };
+    const prev = () => { const el = q('#cp-prev'); if (!el) return; const st = q('#cp-start').value;
+      const sh = st && first ? Math.round((new Date(st) - new Date(first)) / 864e5) : 0;
+      el.innerHTML = rows.map(r => { const ns = r.starts_at ? new Date(new Date(r.starts_at).getTime() + sh * 864e5) : null;
+        return `<div>${esc(r.label)} → <b>${ns ? esc(thDate(ns, { year: 'numeric', weekday: 'short' }) + ' ' + thTime(ns)) : 'ไม่มีวันที่'}</b></div>`; }).join(''); };
+    if (q('#cp-start')) { q('#cp-start').oninput = prev; prev(); }
+    q('form').onsubmit = async e => {
+      e.preventDefault(); const b = q('.btn.sun'), title = q('#cp-title').value.trim(); if (!title) return toast('กรุณาใส่ชื่องาน', true);
+      const dom = (CFG.ALLOWED_DOMAIN || '').toLowerCase();
+      const emails = q('#cp-co').checked ? q('#cp-coemails').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean).map(x => x.includes('@') || !dom ? x : x + '@' + dom) : [];
+      b.disabled = true; b.textContent = 'กำลังสร้าง…';
+      try { const r = await rpc('copy_course', { p_src: c.id, p_title: title, p_start: q('#cp-start') ? q('#cp-start').value || null : null, p_cohosts: emails });
+        d.remove(); toast(`สร้างงานใหม่แล้ว ${r.rounds} รอบ`); this.rosterStep(r.id, title);
+      } catch (er) { toast(errMsg(er), true); b.disabled = false; b.textContent = 'สร้างงานใหม่'; }
+    };
+  },
+  // ขั้นถัดไปหลังคัดลอก: อัปโหลดรายชื่อผู้เข้าร่วม (มีไฟล์ตัวอย่าง) · ข้ามได้
+  rosterStep(id, title) {
+    const d = this.modal(`<div class="box" style="max-width:560px;width:100%;text-align:left;display:grid;gap:12px">
+      <h3 style="margin:0">✓ สร้าง “${esc(title)}” แล้ว</h3>
+      <p style="margin:0"><b>ขั้นถัดไป: อัปโหลดรายชื่อผู้เข้าร่วม</b> <span class="hint">(ใช้เติมชื่อ-แผนกอัตโนมัติ และเป็นเป้าหมายในหน้าสรุปผล)</span></p>
+      <section class="tcard" style="margin:0"><b><span class="stepn">1</span> ดาวน์โหลดไฟล์ตัวอย่าง แล้วกรอกรายชื่อ</b>
+        <p class="hint" style="margin:0">คอลัมน์: ID workplaze · Prefix · First Name · Last · Dept Descr · (Jobcode Descr) · (โรงพยาบาล) · ใช้ไฟล์รายชื่อจาก HR ได้เลยโดยไม่ต้องแก้หัวคอลัมน์</p>
+        <div><button class="btn light sm" id="rs-tpl" type="button">⬇ ดาวน์โหลดไฟล์ตัวอย่างรายชื่อ (.xlsx)</button></div></section>
+      <section class="tcard" style="margin:0"><b><span class="stepn">2</span> อัปโหลดไฟล์ หรือวางลิงก์ Google Sheet</b>
+        <label class="drop" id="rs-drop"><input type="file" id="rs-file" accept=".xlsx,.xls,.csv" hidden><b>เลือกไฟล์ / ลากไฟล์มาวาง</b><span class="hint">.xlsx .xls .csv</span></label>
+        <div class="row"><input class="inp grow" id="rs-url" placeholder="https://docs.google.com/spreadsheets/d/…" style="min-width:0"><button class="btn sm" id="rs-read" type="button">อ่านลิงก์</button></div>
+        <p class="hint" id="rs-msg" style="margin:0"></p></section>
+      <div class="row" style="justify-content:flex-end"><button class="btn light" id="rs-skip" type="button">ข้ามไปก่อน (อัปโหลดภายหลังที่แท็บตั้งค่า)</button></div></div>`);
+    const q = x => d.querySelector(x), go = () => { d.remove(); location.hash = '#course/' + id + ':settings'; };
+    q('#rs-tpl').onclick = () => this.rosterTemplate();
+    q('#rs-skip').onclick = go;
+    const use = async get => {
+      const m = q('#rs-msg'); m.textContent = 'กำลังอ่านไฟล์…';
+      try { const dd = Imp.parse(await get());
+        if (!dd.people.length) { m.textContent = 'ไม่พบรายชื่อในไฟล์ (ต้องมีคอลัมน์รหัสพนักงาน และชื่อ)'; return; }
+        m.textContent = `พบ ${dd.people.length} คน · กำลังบันทึก…`;
+        const st = await rpc('set_course_roster', { p_course: id, p_rows: dd.people });
+        toast(`อัปโหลดรายชื่อแล้ว ${st.count} คน`);
+        if (st.depts.length && confirm(`เพิ่ม ${st.depts.length} แผนกจากไฟล์เป็นรายการแผนกของงานนี้ไหม?`)) {
+          const { error } = await sb.from('courses').update({ departments: st.depts }).eq('id', id); if (error) toast(errMsg(error), true); }
+        go();
+      } catch (e) { m.textContent = errMsg(e); }
+    };
+    q('#rs-file').onchange = e => { const f = e.target.files[0]; if (f) use(() => Imp.readFile(f)); };
+    const dr = q('#rs-drop'); dr.ondragover = e => { e.preventDefault(); dr.classList.add('on'); }; dr.ondragleave = () => dr.classList.remove('on');
+    dr.ondrop = e => { e.preventDefault(); dr.classList.remove('on'); const f = e.dataTransfer.files[0]; if (f) use(() => Imp.readFile(f)); };
+    q('#rs-read').onclick = () => { const u = q('#rs-url').value.trim(); if (u) use(() => Imp.readSheetUrl(u)); };
+  },
+  async rosterTemplate() {
+    try { await loadScript(XLSX_URL); } catch (e) { return toast('โหลดตัวสร้าง Excel ไม่ได้ ตรวจสอบอินเทอร์เน็ต', true); }
+    const X = window.XLSX, wb = X.utils.book_new();
+    const p = X.utils.aoa_to_sheet([['ID workplaze', 'Prefix', 'First Name', 'Last', 'Dept Descr', 'Jobcode Descr', 'โรงพยาบาล'],
+      ['000001', 'นางสาว', 'ตัวอย่าง', 'หนึ่ง', 'Emergency Department', 'O1, Registered Nurse', 'รพ.พริ้นซ์ ลำพูน'],
+      ['000002', 'นาย', 'ตัวอย่าง', 'สอง', 'Information Technology Department', 'O1, Information Technology', 'รพ.ศิริเวชลำพูน']]);
+    p['!cols'] = [{ wch: 14 }, { wch: 9 }, { wch: 16 }, { wch: 16 }, { wch: 32 }, { wch: 26 }, { wch: 18 }];
+    X.utils.book_append_sheet(wb, p, 'รายชื่อ'); X.writeFile(wb, 'แม่แบบ-รายชื่อผู้เข้าร่วม.xlsx');
+  }
+};
 
 // ---------- v14.8 สรุปผลการเข้าอบรม (แบบหน้าสรุปของระบบลงทะเบียนเดิม) ----------
 const Dash = {

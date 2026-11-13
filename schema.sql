@@ -3543,3 +3543,108 @@ begin
 end $$;
 revoke execute on function public.send_course_report(uuid, jsonb, jsonb) from public, anon;
 grant execute on function public.send_course_report(uuid, jsonb, jsonb) to authenticated;
+
+-- =====================================================================
+-- 25) v15.1: ปิดงานอบรม / เปิดอีกครั้ง · คัดลอกเป็นงานใหม่ (อบรมประจำปี)
+-- =====================================================================
+alter table public.courses add column if not exists closed_at timestamptz;
+alter table public.courses add column if not exists closed_by text not null default '';
+
+-- ปิดงาน: ปิดทุกสวิตช์ (จอง ลงชื่อ Pre/Post ลงชื่อจบ ลิงก์ย้อนหลัง) · เปิดอีกครั้ง: ยกเลิกสถานะปิด (สวิตช์คงปิดไว้ เปิดเองทีละรอบ)
+create or replace function public.close_course(p_course uuid, p_close boolean)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare me text := lower(coalesce(auth.jwt() ->> 'email', ''));
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  if p_close then
+    update trainings set checkin_open = false, finish_open = false, pre_open = false, post_open = false, late_until = null
+     where course_id = p_course;
+    update courses set closed_at = now(), closed_by = me, booking_open = false where id = p_course;
+    perform public.log_course(p_course, null, 'ปิดงานอบรม', '{}'::jsonb);
+  else
+    update courses set closed_at = null, closed_by = '' where id = p_course;
+    perform public.log_course(p_course, null, 'เปิดงานอีกครั้ง', '{}'::jsonb);
+  end if;
+  return jsonb_build_object('ok', true, 'closed', p_close);
+end $$;
+revoke execute on function public.close_course(uuid, boolean) from public, anon;
+grant execute on function public.close_course(uuid, boolean) to authenticated;
+
+-- "9 พ.ย." จากเวลา (เวลาไทย)
+create or replace function public.th_short_date(p timestamptz) returns text
+language sql immutable as $$
+  select extract(day from p at time zone 'Asia/Bangkok')::int || ' ' ||
+         (array['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'])[extract(month from p at time zone 'Asia/Bangkok')::int]
+$$;
+
+-- คัดลอกเป็นงานใหม่: ตั้งค่าทั้งหมด + โครงรอบ (เลื่อนวันตามวันเริ่มใหม่ ระยะห่างเดิม) · ไม่คัดลอกรายชื่อ/การจอง/การลงชื่อ/ผลสอบ
+create or replace function public.copy_course(p_src uuid, p_title text, p_start date, p_cohosts jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare s courses; n courses; t trainings; r jsonb; v_first date; v_new timestamptz; v_end timestamptz; v_lab text; v_cnt int := 0;
+        v_co text[]; dom text := lower((select allowed_domain from app_config where id = 1)); v_shift int;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not public.can_manage_course(p_src) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  if trim(coalesce(p_title, '')) = '' then raise exception 'กรุณาใส่ชื่องาน'; end if;
+  select * into s from courses where id = p_src;
+  select coalesce(array_agg(distinct e), '{}') into v_co
+    from (select lower(trim(x)) e from jsonb_array_elements_text(coalesce(p_cohosts, '[]'::jsonb)) x) y
+   where e <> '' and e <> lower(coalesce(auth.jwt() ->> 'email', ''));
+  if coalesce(dom, '') <> '' and exists (select 1 from unnest(v_co) e where e !~ ('^[^@\s]+@' || replace(dom, '.', '\.') || '$')) then
+    raise exception 'ผู้จัดร่วมต้องเป็นอีเมล @%', dom;
+  end if;
+  insert into courses (owner_id, owner_email, title, cert_title, location, seats, steps, booking_open, booking_close_days,
+                       quiz_id, survey_id, pass_percent, hospitals, departments, finish_pin_enabled, finish_pin, cohosts, notify)
+  values (auth.uid(), coalesce(auth.jwt() ->> 'email', ''), left(trim(p_title), 200), s.cert_title, s.location, s.seats, s.steps, false, s.booking_close_days,
+          s.quiz_id, s.survey_id, s.pass_percent, s.hospitals, s.departments, s.finish_pin_enabled,
+          lpad((1000 + floor(random() * 9000))::int::text, 4, '0'), v_co, 'off')
+  returning * into n;
+  select min((starts_at at time zone 'Asia/Bangkok')::date) into v_first from trainings where course_id = s.id;
+  v_shift := case when p_start is not null and v_first is not null then p_start - v_first else null end;
+  for t in select * from trainings where course_id = s.id order by round_no nulls last, starts_at, created_at loop
+    v_new := case when v_shift is not null and t.starts_at is not null then t.starts_at + make_interval(days => v_shift) end;
+    v_end := case when v_shift is not null and t.ends_at is not null then t.ends_at + make_interval(days => v_shift) end;
+    v_lab := coalesce(t.round_label, 'รุ่น ' || (v_cnt + 1));
+    -- วันที่ในชื่อรอบ (เช่น "9 พ.ย.") → วันใหม่
+    if v_new is not null and t.starts_at is not null then
+      v_lab := replace(v_lab, public.th_short_date(t.starts_at), public.th_short_date(v_new));
+    end if;
+    r := public.create_course_round(n.id, v_lab, v_new, v_end);
+    update trainings set seats = t.seats, pass_percent = t.pass_percent, retake = t.retake, shuffle = t.shuffle
+     where id = (r ->> 'id')::uuid;
+    v_cnt := v_cnt + 1;
+  end loop;
+  perform public.log_course(n.id, null, 'สร้างจากการคัดลอก', jsonb_build_object('name', s.title, 'count', v_cnt));
+  perform public.log_course(s.id, null, 'คัดลอกเป็นงานใหม่', jsonb_build_object('name', n.title));
+  return jsonb_build_object('id', n.id, 'rounds', v_cnt);
+end $$;
+revoke execute on function public.copy_course(uuid, text, date, jsonb) from public, anon;
+grant execute on function public.copy_course(uuid, text, date, jsonb) to authenticated;
+
+-- หน้าผู้เข้าร่วม: แจ้งว่างานปิดแล้ว
+do $$ declare d text; begin
+  select pg_get_functiondef('public.course_info(text)'::regprocedure) into d;
+  if position('''closed''' in d) = 0 then
+    d := replace(d, '''id'', c.id, ''title'', c.title,', '''id'', c.id, ''closed'', c.closed_at is not null, ''title'', c.title,');
+    execute d;
+  end if;
+end $$;
+create or replace function public.late_info(p_token text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare t trainings; c courses;
+begin
+  select * into t from trainings where late_token = trim(coalesce(p_token, '')) and coalesce(p_token, '') <> '';
+  if t.id is null then raise exception 'ไม่พบลิงก์นี้ ตรวจสอบลิงก์อีกครั้ง'; end if;
+  if t.late_until is null or t.late_until < now() then raise exception 'ลิงก์ลงชื่อย้อนหลังหมดอายุแล้ว · ติดต่อผู้จัด'; end if;
+  select * into c from courses where id = t.course_id;
+  if c.closed_at is not null then raise exception 'งานอบรมนี้ปิดแล้ว · ติดต่อผู้จัด'; end if;
+  return jsonb_build_object(
+    'id', c.id, 'code', c.booking_code, 'title', coalesce(c.title, t.title), 'cert_title', c.cert_title, 'location', c.location,
+    'steps', c.steps, 'booking_open', false, 'late', true, 'until', t.late_until,
+    'roster', c.roster_source is not null,
+    'hospitals', coalesce(c.hospitals, public.list_hospitals()),
+    'departments', case when jsonb_typeof(c.departments) = 'array' then c.departments else public.list_departments() end,
+    'rounds', jsonb_build_array(jsonb_build_object('id', t.id, 'code', t.code, 'label', coalesce(t.round_label, t.title),
+        'starts_at', t.starts_at, 'ends_at', t.ends_at, 'checkin_open', true, 'open', false, 'seats', 0, 'booked', 0)));
+end $$;
