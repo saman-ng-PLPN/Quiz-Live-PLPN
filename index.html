@@ -556,6 +556,51 @@ canvas.sigpad{width:100%;height:180px;border:2px dashed #93c5fd;border-radius:14
 .issues{display:grid;gap:6px;font-size:14px}
 .phase.bad{background:#fde2e2;color:#b4373e}
 .rosterbox{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}
+
+/* ---------- v15 ธีมสีตามโลโก้ รพ. (น้ำเงินเข้ม · ฟ้า · เหลือง) — หน้าผู้จัดและผู้เข้าร่วม · หน้าเกมคงเดิม ---------- */
+body.admin, body.test{--navy:#0f5592; --navy2:#185d9b; --navy3:#2b7cc0; --sky:#63bff5; --sky2:#d9effd; --gold:#f7bb1a; --gold2:#fff4d1;
+  --line:#d5e6f5; --blue:#185d9b; --blue-soft:#eef7fe; --blue-line:#c9e4f8; --ink:#10263f}
+body.admin{background:linear-gradient(180deg,#e3f2fd 0,#f2f8fd 260px,#f6fafe 100%) fixed}
+body.test{background:linear-gradient(160deg,#dff0fc 0%,#f3f9fe 55%,#fff8e6 100%) fixed}
+body.admin .topbar{background:linear-gradient(100deg,#0a4f8c 0%,#185d9b 55%,#2b86c9 100%);box-shadow:0 2px 0 var(--gold),0 6px 18px rgba(10,83,147,.18)}
+body.admin .brand span, body.test .brand span{color:var(--sky)}
+.brand b.pl{color:var(--gold)}
+body.admin .btn{background:var(--navy2)}
+body.admin .btn:hover{background:#0f4f86}
+body.admin .btn.light, body.test .btn.light{background:#fff;color:var(--navy2);border-color:var(--blue-line)}
+body.admin .btn.light:hover, body.test .btn.light:hover{background:var(--blue-soft)}
+body.admin .btn.danger{background:#fff}
+body.admin .btn.sun, body.test .btn.sun{background:var(--gold);color:#0a3a66}
+body.admin .btn.sun:hover, body.test .btn.sun:hover{background:#eaa908}
+body.admin .btn.ghost{background:transparent}
+.secnav{border-bottom-color:var(--blue-line)}
+.secnav button.on,.secnav a.on{color:var(--navy2);border-bottom-color:var(--gold)}
+.secnav button:hover{color:var(--navy2)}
+.cnt{background:var(--sky2);color:var(--navy2)}
+body.admin .tcard, body.test .tcard{box-shadow:0 1px 2px rgba(15,85,146,.06),0 4px 14px rgba(15,85,146,.06);border:1px solid #e3eef8}
+body.admin .ccard{border-color:#d9e9f7;box-shadow:0 4px 14px rgba(15,85,146,.06);border-top:4px solid var(--sky)}
+body.admin .ccard:hover{border-top-color:var(--gold)}
+.cico{background:linear-gradient(135deg,var(--navy2),var(--sky))}
+table.rep th{background:#eaf4fd;color:#0f4f86}
+table.rep tbody tr:nth-child(even) td{background:#fafcff}
+table.rep tbody tr:hover td{background:#f1f8fe}
+.tst-head{background:linear-gradient(120deg,#0a4f8c 0%,#185d9b 50%,#2b86c9 100%);box-shadow:0 3px 0 var(--gold),0 8px 20px rgba(10,83,147,.18)}
+.phase.open{background:#dff5e8;color:#16683e}
+.notice{background:var(--gold2);border-color:#f3dc91}
+/* สรุปผล: แถบหัวสี + ไอคอนหัวข้อ */
+.dhero{background:linear-gradient(115deg,#0a4f8c 0%,#185d9b 45%,#2b86c9 100%);color:#fff;border-radius:18px;padding:16px 18px 14px;margin-top:14px;box-shadow:0 3px 0 var(--gold),0 10px 24px rgba(10,83,147,.2)}
+.dhero h3{margin:0;font-size:19px}.dhero .hint{color:#cfe8fb}
+body.admin .dhero .btn.light{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.35)}
+.dhero .dk>div{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.22);color:#fff}
+.dhero .dk>div.g{background:var(--gold);border-color:var(--gold);color:#0a3a66}
+.dhero .dk span,.dhero .dk small{opacity:.9}
+.dhero .line{color:#e4f2fd;text-align:center;margin:10px 0 0;font-size:14px}.dhero .line b{color:#fff}
+.dsec{background:#fff;border-radius:18px;padding:16px;border:1px solid #e3eef8;box-shadow:0 4px 14px rgba(15,85,146,.06)}
+.dsec>h3 .ic{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--sky2);font-size:16px}
+.dsec.alt>h3 .ic{background:var(--gold2)}
+details.dl{border:1px solid #e3eef8;box-shadow:none}
+details.dl[open] summary{color:var(--navy2)}
+.dk .b{background:#e6f3fd;border-color:#c5e3f8;color:#0f5592}
 </style>
 </head>
 <body>
@@ -607,7 +652,7 @@ function setBrandLogo(v) {
   const tb = document.querySelector('.topbar .brand');
   if (logoSrc() && tb && !document.querySelector('.topbar .hlogo')) tb.insertAdjacentHTML('afterend', logoHTML());
 }
-const brandHTML = () => { const p = APP.split(' '); return p.length > 1 ? `${esc(p[0])} <span>${esc(p[1])}</span>${p.length > 2 ? ' ' + esc(p.slice(2).join(' ')) : ''}` : esc(APP); };
+const brandHTML = () => { const p = APP.split(' '); return p.length > 1 ? `${esc(p[0])} <span>${esc(p[1])}</span>${p.length > 2 ? ' <b class="pl">' + esc(p.slice(2).join(' ')) + '</b>' : ''}` : esc(APP); };
 const avatarHTML = (id, name, cls = '') => {
   const a = window.AVATARS && id ? window.AVATARS.byId(id) : null;
   return a ? `<span class="av ${cls}" role="img" aria-label="${esc(a.name)}">${a.svg}</span>`
@@ -3801,17 +3846,17 @@ const Dash = {
     const person = (p, extra) => `<tr><td>${esc(p.emp_id)}</td><td>${esc(p.name)}</td><td>${esc(p.dept)}</td>${extra}</tr>`;
     const stc = st => st === 'ไม่มา' ? 'color:#a32020;font-weight:600' : st === 'วันนี้ ยังไม่มา' ? 'color:#8a5a00;font-weight:600' : 'color:var(--muted)';
     box.innerHTML = `
-      <div class="row" style="margin:14px 0 10px"><div class="grow"><h3 style="margin:0;font-size:18px">📊 สรุปการเข้าอบรม</h3>
+      <div class="dhero"><div class="row" style="margin:0 0 12px"><div class="grow"><h3>📊 สรุปการเข้าอบรม Real-time</h3>
         <span class="hint">ข้อมูล ณ ${esc(thDate(this.at))} ${esc(thTime(this.at))} น.</span></div>
         <button class="btn light sm" id="ds-ref">⟳ รีเฟรช</button></div>
-      <div class="dk"><div class="b"><span>อบรมแล้ว</span><b>${t.attended}</b><small>คน</small></div>
-        <div class="n"><span>ทั้งหมด</span><b>${t.total || '–'}</b><small>${t.total ? 'คนในรายชื่อ' : 'ยังไม่มีรายชื่อเป้าหมาย'}</small></div>
+      <div class="dk"><div><span>อบรมแล้ว</span><b>${t.attended}</b><small>คน</small></div>
+        <div><span>ทั้งหมด</span><b>${t.total || '–'}</b><small>${t.total ? 'คนในรายชื่อ' : 'ยังไม่มีรายชื่อเป้าหมาย'}</small></div>
         <div class="g"><span>คิดเป็น</span><b>${t.percent == null ? '–' : t.percent + '%'}</b><small>ความคืบหน้า</small></div></div>
-      <p class="hint" style="text-align:center;margin:8px 0 0">จองไว้ล่วงหน้า <b style="color:#1b6b42">${t.bookedCame}</b> คน · ไม่ได้จอง <b style="color:#8a5a00">${t.notBooked}</b> คน
-        · ลงทะเบียนใหม่หน้างาน <b style="color:#3f3cbb">${t.walkin}</b> คน${d.finOn ? ` · ลงชื่อหลังอบรมแล้ว <b style="color:#1b6b42">${t.fin}</b> คน` : ''}${t.late ? ` · ลงชื่อย้อนหลัง <b>${t.late}</b> คน` : ''}</p>
+      <p class="line">จองไว้ล่วงหน้า <b>${t.bookedCame}</b> คน · ไม่ได้จอง <b>${t.notBooked}</b> คน
+        · ลงทะเบียนใหม่หน้างาน <b>${t.walkin}</b> คน${d.finOn ? ` · ลงชื่อหลังอบรมแล้ว <b>${t.fin}</b> คน` : ''}${t.late ? ` · ลงชื่อย้อนหลัง <b>${t.late}</b> คน` : ''}</p></div>
       ${t.total ? '' : `<p class="notice" style="margin-top:10px">ยังไม่มีรายชื่อเป้าหมาย · อัปโหลดรายชื่อพนักงานที่ต้องอบรมได้ที่ <a href="#course/${c.id}:settings">ตั้งค่า › รายชื่อผู้เข้าร่วม</a> เพื่อดู % และความคืบหน้ารายแผนก</p>`}
 
-      <section class="dsec"><h3>📅 รายงานรายวัน / รายรอบ<span class="grow"></span>
+      <section class="dsec"><h3><span class="ic">📅</span> รายงานรายวัน / รายรอบ<span class="grow"></span>
           <button class="btn light sm" id="ds-xls">⬇ ดาวน์โหลด Excel</button><button class="btn sm" id="ds-print">🖨 พิมพ์</button></h3>
         <div class="frm2"><select class="inp" id="ds-day"><option value="">ทุกวัน</option>${days.map(x => `<option value="${x}" ${f.day === x ? 'selected' : ''}>${esc(thDate(x + 'T05:00:00Z', { year: 'numeric', weekday: 'short' }))}</option>`).join('')}</select>
           <select class="inp" id="ds-round"><option value="">ทุกรอบ</option>${rows.filter(r => !f.day || this.day(r.starts_at) === f.day).map(r => `<option value="${r.id}" ${f.round === r.id ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
@@ -3832,11 +3877,11 @@ const Dash = {
           ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่มา'], d.lists.noFin.map(p => person(p, `<td>${esc(rl(p))}</td>`)).join(''))}</details>` : ''}
       </section>
 
-      <section class="dsec"><h3>⚖ เทียบการจอง กับผู้เข้าอบรมจริง<span class="grow"></span><button class="btn sm" id="ds-rep">🖨 พิมพ์รายงาน</button></h3>
+      <section class="dsec alt"><h3><span class="ic">⚖</span> เทียบการจอง กับผู้เข้าอบรมจริง<span class="grow"></span><button class="btn sm" id="ds-rep">🖨 พิมพ์รายงาน</button></h3>
         <div class="dk" style="grid-template-columns:repeat(2,1fr)"><div class="g"><span>จองและมา</span><b>${t.bookedCame}</b></div>
           <div class="r"><span>จองแต่ไม่มา</span><b>${t.absentPast}</b><small>${[t.absentToday ? 'วันนี้ยังไม่มา ' + t.absentToday : '', t.upcoming ? 'ยังไม่ถึงเวลา ' + t.upcoming : ''].filter(Boolean).join(' · ')}</small></div>
           <div class="y"><span>ไม่จองแต่มา</span><b>${t.notBooked}</b></div><div class="v"><span>ลงทะเบียนใหม่หน้างาน</span><b>${t.walkin}</b></div></div>
-        <div class="tcard" style="padding:12px 14px"><b style="font-size:14px">ความคืบหน้ารายแผนก ${d.hasRoster ? '(น้อยไปมาก)' : ''}</b>
+        <div style="margin-top:14px"><b style="font-size:15px">ความคืบหน้ารายแผนก ${d.hasRoster ? '(น้อยไปมาก)' : ''}</b>
           ${tbl(['แผนก', 'เป้าหมาย', 'จอง', 'เข้าอบรม', '%'].map((h, i) => i ? `<span style="display:block;text-align:right">${h}</span>` : h),
             d.depts.map(x => `<tr><td><b>${esc(x.dept)}</b></td><td class="num">${x.target || '–'}</td><td class="num">${x.booked}</td><td class="num">${x.attended}</td>
               <td class="num" style="font-weight:700;color:${x.percent != null && x.percent < 50 ? '#a32020' : '#1b6b42'}">${x.percent == null ? '–' : x.percent + '%'}</td></tr>`).join(''))}</div>
