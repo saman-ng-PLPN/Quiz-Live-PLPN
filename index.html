@@ -2558,9 +2558,12 @@ const Training = {
       $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(link); } };
       $('#bigqr').onclick = () => showBigQR(c.title, link, { courseId: c.id });
     }
+    if (CkLock.left(t.id)) CkLock.apply($('#sw-ck'), t.id, null);
     $('#sw-ck').onchange = async e => {
+      if (CkLock.left(t.id) || !CkLock.ask(t.round_label || '', e.target.checked)) { e.target.checked = !e.target.checked; return; }
+      CkLock.hit(t.id); CkLock.apply(e.target, t.id, null);
       const { error } = await sb.from('trainings').update({ checkin_open: e.target.checked }).eq('id', t.id);
-      if (error) { e.target.checked = !e.target.checked; return toast(errMsg(error), true); }
+      if (error) { CkLock.at[t.id] = 0; e.target.disabled = false; e.target.checked = !e.target.checked; return toast(errMsg(error), true); }
       t.checkin_open = e.target.checked; toast(t.checkin_open ? 'เปิดลงชื่อแล้ว' : 'ปิดลงชื่อแล้ว');
     };
     LateLink.bind(t, () => this.renderNoQuiz());
@@ -2954,6 +2957,20 @@ const NewTraining = {
 // v14: งานอบรม — จอง → ลงทะเบียนเข้า → Pre → Post → ประเมิน → ลงชื่อจบ
 // =====================================================================
 const STEPS = [['booking', 'จอง'], ['checkin', 'ลงทะเบียนเข้า'], ['pre', 'Pre-test'], ['post', 'Post-test ผ่าน'], ['survey', 'ประเมิน'], ['finish', 'ลงชื่อจบ']];
+// สวิตช์ลงชื่อ: ถามยืนยัน + ล็อก 20 วินาทีหลังเปลี่ยน (กันแตะซ้ำ)
+const CkLock = {
+  ms: 20000, at: {},
+  left(id) { return Math.max(0, Math.ceil(((this.at[id] || 0) + this.ms - Date.now()) / 1000)); },
+  hit(id) { this.at[id] = Date.now(); },
+  ask(label, on) { return confirm(`${on ? 'เปิด' : 'ปิด'}ลงชื่อ${label ? ' ' + label : ''}?\n${on ? 'ผู้เข้าร่วมจะเห็นรอบนี้และลงชื่อได้' : 'ผู้เข้าร่วมจะไม่เห็นรอบนี้ในหน้าลงชื่อ (กดรีเฟรชแล้ว)'}`); },
+  // ปิดสวิตช์ที่เพิ่งเปลี่ยน + นับถอยหลังใต้สวิตช์
+  apply(el, id, hint) {
+    const tick = () => { if (!el.isConnected) return clearInterval(iv); const n = this.left(id);
+      el.disabled = n > 0; if (hint) hint.textContent = n > 0 ? `${hint.dataset.base} · รอ ${n} วิ` : hint.dataset.base; if (!n) clearInterval(iv); };
+    if (hint) hint.dataset.base = hint.dataset.base || hint.textContent;
+    const iv = setInterval(tick, 1000); tick();
+  }
+};
 const SHORT = { booking: 'จอง', checkin: 'เข้า', pre: 'Pre', post: 'ผ่าน', survey: 'ประเมิน', finish: 'จบ' };
 const STEP_KEY = { booking: 'booked', checkin: 'checkin', pre: 'pre', post: 'passed', survey: 'survey', finish: 'finish' };
 const stepOn = (c, k) => !c.steps || c.steps[k] !== false;
@@ -3110,16 +3127,22 @@ const Course = {
     this.bindAddRound();
     if ($('#lk-copy')) $('#lk-copy').onclick = async () => { try { await navigator.clipboard.writeText(this.entryLink()); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(this.entryLink()); } };
     if ($('#lk-qr')) $('#lk-qr').onclick = () => showBigQR(c.title, this.entryLink(), { courseId: c.id, bg: c.qr_bg || '' });
+    if ($('#ck-all') && CkLock.left('all:' + c.id)) CkLock.apply($('#ck-all'), 'all:' + c.id, null);
     if ($('#ck-all')) $('#ck-all').onclick = async () => {
       const on = !rows.every(r => r.open && r.open.checkin);
+      if (CkLock.left('all:' + c.id) || !CkLock.ask('ทุกรอบ', on)) return;
+      CkLock.hit('all:' + c.id); rows.forEach(r => CkLock.hit(r.id));
       const { error } = await sb.from('trainings').update({ checkin_open: on }).eq('course_id', c.id);
-      if (error) return toast(errMsg(error), true);
+      if (error) { CkLock.at['all:' + c.id] = 0; rows.forEach(r => { CkLock.at[r.id] = 0; }); return toast(errMsg(error), true); }
       toast(on ? 'เปิดลงชื่อทุกรอบแล้ว' : 'ปิดลงชื่อทุกรอบแล้ว'); await this.loadRows(); this.renderBody();
     };
+    $$('[data-ck]', box).forEach(b => { if (CkLock.left(b.dataset.ck)) CkLock.apply(b, b.dataset.ck, b.closest('td') && b.closest('td').querySelector('.hint')); });
     $$('[data-ck]', box).forEach(b => b.onchange = async () => {
-      const r = this.rows.find(x => x.id === b.dataset.ck); b.disabled = true;
+      const r = this.rows.find(x => x.id === b.dataset.ck);
+      if (CkLock.left(r.id) || !CkLock.ask(r.label, b.checked)) { b.checked = !b.checked; return; }
+      b.disabled = true; CkLock.hit(r.id);
       const { error } = await sb.from('trainings').update({ checkin_open: b.checked }).eq('id', r.id);
-      if (error) { toast(errMsg(error), true); b.checked = !b.checked; b.disabled = false; return; }
+      if (error) { CkLock.at[r.id] = 0; toast(errMsg(error), true); b.checked = !b.checked; b.disabled = false; return; }
       toast(b.checked ? `เปิดลงชื่อ ${r.label} แล้ว` : `ปิดลงชื่อ ${r.label} แล้ว`); await this.loadRows(); this.renderBody();
     });
     $$('[data-bk]', box).forEach(b => b.onchange = async () => {
