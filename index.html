@@ -3905,34 +3905,72 @@ const Dash = {
   },
   scopeLabel(C) { const f = this.f, r = C.rows.find(x => x.id === f.round);
     return r ? r.label : f.day ? 'วันที่ ' + thDate(f.day + 'T05:00:00Z', { year: 'numeric' }) : 'ทุกวัน / ทุกรอบ'; },
+  // พิมพ์: หน้าตาและสีเดียวกับหน้าเว็บ · A4 แนวตั้ง · รายชื่อกางออกทั้งหมด
   print(C, d, kind) {
-    const c = C.c, t = d.top, s = d.scope, B = 'border:1px solid #000;padding:3px 5px';
-    const T = (head, rows) => `<table><tr>${head.map(h => `<th style="${B}">${h}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map((v, i) => `<td style="${B}${i && typeof v === 'number' ? ';text-align:right' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</table>`;
-    const P = p => [p.emp_id, p.name, p.dept];
-    let h = `${logoAbs() ? `<img src="${esc(logoAbs())}" alt="" style="height:11mm;float:left">` : ''}<h1>${kind === 'rec' ? 'รายงานสรุปผู้เข้าอบรม (เทียบการจองกับผู้เข้าอบรมจริง)' : 'รายงานผู้เข้าอบรมรายวัน / รายรอบ'}</h1>
-      <p class="sub">${esc(c.cert_title || c.title)}<br>${kind === 'rec' ? '' : esc(this.scopeLabel(C)) + ' · '}ข้อมูล ณ ${esc(new Date().toLocaleString('th-TH'))}</p>`;
+    const c = C.c, t = d.top, s = d.scope, logo = logoAbs();
+    const rl = p => [...p.in].map(id => (d.lab[id] || {}).label || '').join(', ');
+    const stc = st => st === 'ไม่มา' ? 'r' : st === 'วันนี้ ยังไม่มา' ? 'y' : 'm';
+    const tbl = (head, rows, right = []) => `<table class="rep"><thead><tr>${head.map((h, i) => `<th class="${right.includes(i) ? 'num' : ''}">${h}</th>`).join('')}</tr></thead>
+      <tbody>${rows.length ? rows.join('') : `<tr><td colspan="${head.length}" class="m">ไม่มีรายการ</td></tr>`}</tbody></table>`;
+    const tile = (cls, label, val, sub) => `<div class="${cls}"><span>${label}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+    const person = (p, extra) => `<tr><td>${esc(p.emp_id)}</td><td>${esc(p.name)}</td><td>${esc(p.dept)}</td>${extra}</tr>`;
+    const hero = `<section class="hero"><div class="hrow">${logo ? `<span class="hl"><img src="${esc(logo)}" alt=""></span>` : ''}
+        <div class="grow"><h1>${kind === 'rec' ? 'รายงานสรุปผู้เข้าอบรม' : 'รายงานผู้เข้าอบรมรายวัน / รายรอบ'}</h1>
+        <div class="st">${esc(c.cert_title || c.title)}</div>
+        <div class="st2">${kind === 'rec' ? 'ทั้งงาน' : esc(this.scopeLabel(C))} · ข้อมูล ณ ${esc(thDate(new Date(), { year: 'numeric' }))} ${esc(thTime(new Date()))} น.</div></div></div>
+      <div class="dk">${tile('', 'อบรมแล้ว', t.attended, 'คน')}${tile('', 'ทั้งหมด', t.total || '–', t.total ? 'คนในรายชื่อ' : 'ไม่มีรายชื่อเป้าหมาย')}${tile('g', 'คิดเป็น', t.percent == null ? '–' : t.percent + '%', 'ความคืบหน้า')}</div>
+      <p class="line">จองไว้ล่วงหน้า <b>${t.bookedCame}</b> · ไม่ได้จอง <b>${t.notBooked}</b> · ลงทะเบียนใหม่หน้างาน <b>${t.walkin}</b>${d.finOn ? ` · ลงชื่อหลังอบรมแล้ว <b>${t.fin}</b>` : ''}${t.late ? ` · ลงชื่อย้อนหลัง <b>${t.late}</b>` : ''} คน</p></section>`;
+    let body = '';
     if (kind === 'rec') {
-      h += T(['อบรมแล้ว', 'ทั้งหมด', 'คิดเป็น', 'จองและมา', 'จองแต่ไม่มา', 'วันนี้จองแต่ยังไม่มา', 'ไม่จองแต่มา', 'ลงทะเบียนใหม่หน้างาน'],
-        [[t.attended, t.total || '–', t.percent == null ? '–' : t.percent + '%', t.bookedCame, t.absentPast, t.absentToday, t.notBooked, t.walkin]]);
-      h += '<h2>รายแผนก</h2>' + T(['แผนก', 'เป้าหมาย', 'จอง', 'เข้าอบรม', '%'], d.depts.map(x => [x.dept, x.target || '–', x.booked, x.attended, x.percent == null ? '–' : x.percent + '%']));
-      const ab = d.lists.absent.filter(a => a.state !== 'ยังไม่ถึงเวลา');
-      if (ab.length) h += `<h2>จองแล้วแต่ไม่ได้ลงชื่อ (${ab.length} คน)</h2>` + T(['รหัส', 'ชื่อ-นามสกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], ab.map(a => [...P(a.p), a.r ? a.r.label : '', a.state]));
+      body = `<section class="sec alt"><h2><span class="ic">⚖</span> เทียบการจอง กับผู้เข้าอบรมจริง</h2>
+        <div class="dk c4">${tile('g', 'จองและมา', t.bookedCame)}${tile('r', 'จองแต่ไม่มา', t.absentPast, [t.absentToday ? 'วันนี้ยังไม่มา ' + t.absentToday : '', t.upcoming ? 'ยังไม่ถึงเวลา ' + t.upcoming : ''].filter(Boolean).join(' · '))}
+          ${tile('y', 'ไม่จองแต่มา', t.notBooked)}${tile('v', 'ลงทะเบียนใหม่หน้างาน', t.walkin)}</div>
+        <h3>ความคืบหน้ารายแผนก${d.hasRoster ? ' (น้อยไปมาก)' : ''}</h3>
+        ${tbl(['แผนก', 'เป้าหมาย', 'จอง', 'เข้าอบรม', '%'], d.depts.map(x => `<tr><td><b>${esc(x.dept)}</b></td><td class="num">${x.target || '–'}</td><td class="num">${x.booked}</td><td class="num">${x.attended}</td>
+          <td class="num ${x.percent != null && x.percent < 50 ? 'r' : 'g'}"><b>${x.percent == null ? '–' : x.percent + '%'}</b></td></tr>`), [1, 2, 3, 4])}
+        ${(() => { const ab = d.lists.absent.filter(a => a.state !== 'ยังไม่ถึงเวลา'); return ab.length ? `<h3>จองแล้วแต่ไม่ได้ลงชื่อ (${ab.length} คน)</h3>` +
+          tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], ab.map(a => person(a.p, `<td>${esc(a.r ? a.r.label : '')}</td><td class="${stc(a.state)}"><b>${esc(a.state)}</b></td>`))) : ''; })()}</section>`;
     } else {
-      h += T(['จองไว้', 'จองและมา', 'จองแต่ไม่มา', 'ไม่จองแต่มา', 'ลงทะเบียนหน้างาน', 'ผู้ลงชื่อรวม'], [[s.booked, s.bookedCame, s.absent, s.notBooked, s.walkin, s.total]]);
-      h += '<h2>รายรอบ</h2>' + T(['วัน/รอบ', 'จอง', 'จอง+มา', 'ไม่มา', 'ไม่จอง+มา', 'หน้างาน', 'รวม'],
-        d.per.map(x => [(x.r.starts_at ? thDate(x.r.starts_at, { year: 'numeric' }) + ' · ' : '') + x.r.label, x.booked, x.bookedCame, x.absent, x.notBooked, x.walkin, x.total]));
-      if (d.lists.absent.length) h += `<h2>จองแต่ไม่มา / ยังไม่ถึงเวลา (${d.lists.absent.length})</h2>` + T(['รหัส', 'ชื่อ-นามสกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], d.lists.absent.map(a => [...P(a.p), a.r ? a.r.label : '', a.state]));
-      if (d.lists.notBooked.length) h += `<h2>ไม่จองแต่มา (${d.lists.notBooked.length})</h2>` + T(['รหัส', 'ชื่อ-นามสกุล', 'แผนก'], d.lists.notBooked.map(P));
-      if (d.hasRoster && d.lists.walkin.length) h += `<h2>ลงทะเบียนหน้างาน (${d.lists.walkin.length})</h2>` + T(['รหัส', 'ชื่อ-นามสกุล', 'แผนก'], d.lists.walkin.map(P));
+      body = `<section class="sec"><h2><span class="ic">📅</span> รายงานรายวัน / รายรอบ <small>${esc(this.scopeLabel(C))}</small></h2>
+        <div class="dk">${tile('b', 'จองไว้', s.booked)}${tile('g', 'จองและมา', s.bookedCame)}${tile('r', 'จองแต่ไม่มา', s.absent)}
+          ${tile('y', 'ไม่จองแต่มา', s.notBooked)}${tile('v', 'ลงทะเบียนหน้างาน', s.walkin)}${tile('n', 'ผู้ลงชื่อรวม', s.total)}</div>
+        ${tbl(['วัน/รอบ', 'จอง', 'จอง+มา', 'ไม่มา', 'ไม่จอง+มา', 'หน้างาน', 'รวม'], d.per.map(x => `<tr><td>${x.r.starts_at ? esc(thDate(x.r.starts_at, { year: 'numeric' })) + '<br>' : ''}<span class="m">${esc(x.r.label)}</span></td>
+          <td class="num">${x.booked}</td><td class="num g">${x.bookedCame}</td><td class="num r">${x.absent}</td><td class="num y">${x.notBooked}</td><td class="num v">${x.walkin}</td><td class="num"><b>${x.total}</b></td></tr>`), [1, 2, 3, 4, 5, 6])}
+        <h3>รายชื่อจองแต่ไม่มา / ยังไม่ถึงเวลา (${d.lists.absent.length})</h3>
+        ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่จอง', 'สถานะ'], d.lists.absent.map(a => person(a.p, `<td>${esc(a.r ? a.r.label : '')}</td><td class="${stc(a.state)}"><b>${esc(a.state)}</b></td>`)))}
+        <h3>รายชื่อลงทะเบียนหน้างาน (ไม่อยู่ในรายชื่อ) (${d.lists.walkin.length})</h3>
+        ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่มา'], d.lists.walkin.map(p => person(p, `<td>${esc(rl(p))}</td>`)))}
+        <h3>รายชื่อไม่จองแต่มา (${d.lists.notBooked.length})</h3>
+        ${tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่มา'], d.lists.notBooked.map(p => person(p, `<td>${esc(rl(p))}</td>`)))}
+        ${d.finOn ? `<h3>ยังไม่ได้ลงชื่อหลังอบรม (${d.lists.noFin.length})</h3>` + tbl(['รหัส', 'ชื่อ-สกุล', 'แผนก', 'รอบที่มา'], d.lists.noFin.map(p => person(p, `<td>${esc(rl(p))}</td>`))) : ''}</section>`;
     }
     const w = window.open('', '_blank'); if (!w) return toast('เบราว์เซอร์บล็อกหน้าต่างใหม่ · อนุญาตป๊อปอัปแล้วลองอีกครั้ง', true);
-    w.document.write(`<!doctype html><html lang="th"><head><meta charset="utf-8"><title>สรุป ${esc(c.title)}</title>
-      <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet"><style>@page{size:A4;margin:12mm}
-      body{font-family:'Sarabun',sans-serif;font-size:12px;margin:0}h1{font-size:16px;text-align:center;margin:0}h2{font-size:13px;margin:12px 0 4px}.sub{text-align:center;margin:2px 0 10px}
-      table{width:100%;border-collapse:collapse;margin-bottom:6px}th{background:#eee}tr{page-break-inside:avoid}
-      .bar{position:sticky;top:0;background:#1e3a8a;color:#fff;padding:8px 12px;display:flex;gap:10px;align-items:center;font-family:sans-serif}
-      .bar button{font:inherit;padding:6px 14px;border-radius:8px;border:0;background:#fff;color:#1e3a8a;font-weight:600;cursor:pointer}@media print{.bar{display:none}}</style></head>
-      <body><div class="bar"><span style="flex:1">${esc(c.title)}</span><button onclick="print()">พิมพ์ / บันทึก PDF</button></div><div style="padding:8px">${h}</div></body></html>`);
+    w.document.write(`<!doctype html><html lang="th"><head><meta charset="utf-8"><title>${kind === 'rec' ? 'รายงานสรุป' : 'รายงานรายวัน-รายรอบ'} ${esc(c.title)}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600;700&display=swap" rel="stylesheet"><style>
+      @page{size:A4 portrait;margin:10mm}*{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box}
+      body{font-family:'Kanit',sans-serif;font-size:12px;color:#10263f;margin:0;background:#f2f8fd}.page{max-width:190mm;margin:0 auto;padding:10px 0}
+      .hero{background:linear-gradient(115deg,#0a4f8c 0%,#185d9b 45%,#2b86c9 100%);color:#fff;border-radius:14px;padding:12px 14px 10px;border-bottom:3px solid #f7bb1a}
+      .hrow{display:flex;align-items:center;gap:12px}.grow{flex:1}.hl{background:#fff;border-radius:8px;padding:3px 6px;display:inline-flex}.hl img{height:24px}
+      h1{font-size:17px;margin:0}.st{font-size:12.5px;color:#e4f2fd}.st2{font-size:11px;color:#cfe8fb}
+      .dk{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:9px}.dk.c4{grid-template-columns:repeat(2,1fr)}
+      .dk>div{border-radius:10px;padding:7px;text-align:center;border:1px solid transparent}.dk span{font-size:11px;display:block}.dk b{display:block;font-size:20px;line-height:1.2}.dk small{font-size:10px;display:block;opacity:.85}
+      .hero .dk>div{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.25);color:#fff}.hero .dk>div.g{background:#f7bb1a;border-color:#f7bb1a;color:#0a3a66}
+      .line{color:#e4f2fd;text-align:center;margin:7px 0 0;font-size:11.5px}.line b{color:#fff}
+      .dk .b{background:#e6f3fd;border-color:#c5e3f8;color:#0f5592}.dk .g{background:#e9f8ef;border-color:#cdeedb;color:#1b6b42}.dk .r{background:#fdeeee;border-color:#f6d3d3;color:#a32020}
+      .dk .y{background:#fff7e3;border-color:#f5e3b5;color:#8a5a00}.dk .v{background:#eff0fe;border-color:#d9dcfb;color:#3f3cbb}.dk .n{background:#f4f6f9;border-color:#e2e8f0;color:#0f172a}
+      .sec{background:#fff;border-radius:14px;padding:12px;margin-top:10px;border:1px solid #e3eef8}
+      h2{display:flex;align-items:center;gap:7px;font-size:15px;margin:0}h2 small{font-weight:400;color:#5f6c78;font-size:12px}
+      .ic{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:7px;background:#d9effd;font-size:13px}.alt .ic{background:#fff4d1}
+      h3{font-size:13px;margin:12px 0 4px;color:#0f4f86}
+      table.rep{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}table.rep th{background:#eaf4fd;color:#0f4f86;text-align:left;font-weight:600;padding:4px 6px}
+      table.rep td{padding:3px 6px;border-bottom:1px solid #edf2f7;vertical-align:top}table.rep tbody tr:nth-child(even) td{background:#fafcff}
+      .num,table.rep th.num{text-align:right}.g{color:#1b6b42}.r{color:#a32020}.y{color:#8a5a00}.v{color:#3f3cbb}.m{color:#5f6c78}
+      tr{page-break-inside:avoid}thead{display:table-header-group}h3{page-break-after:avoid}
+      .bar{position:sticky;top:0;background:#185d9b;color:#fff;padding:8px 12px;display:flex;gap:10px;align-items:center;font-family:sans-serif;z-index:2}
+      .bar button{font:inherit;padding:6px 14px;border-radius:8px;border:0;background:#f7bb1a;color:#0a3a66;font-weight:600;cursor:pointer}
+      @media print{.bar{display:none}body{background:#fff}.page{padding:0}}</style></head>
+      <body><div class="bar"><span style="flex:1">${esc(c.title)} · A4 แนวตั้ง · ติ๊ก “กราฟิกพื้นหลัง” ในหน้าพิมพ์เพื่อให้มีสี</span><button onclick="print()">พิมพ์ / บันทึก PDF</button></div>
+      <div class="page">${hero}${body}</div></body></html>`);
     w.document.close();
   },
   async excel(C, d) {
