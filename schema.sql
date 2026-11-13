@@ -3144,3 +3144,281 @@ begin
   return public.course_roster_stats(p_course);
 end $$;
 
+
+-- =====================================================================
+-- 22) v14.6: อีเมล — เชิญผู้จัดร่วม + แจ้งเตือนผู้จัด (ทันที / สรุปรายวัน 17:00)
+--     ส่งผ่าน Google Apps Script (web app) ของบัญชีบริษัท · URL/รหัสลับเก็บในตารางที่ไม่มีใครอ่านได้
+-- =====================================================================
+create extension if not exists pg_net;
+
+create table if not exists public.mail_config (
+  id          int primary key default 1 check (id = 1),
+  webhook_url text not null default '',
+  token       text not null default '',
+  site_url    text not null default 'https://plpnquiz.pages.dev/',
+  updated_at  timestamptz not null default now(),
+  updated_by  text not null default ''
+);
+insert into public.mail_config (id) values (1) on conflict (id) do nothing;
+alter table public.mail_config enable row level security;
+revoke all on public.mail_config from anon, authenticated;
+
+create table if not exists public.mail_log (
+  id        bigint generated always as identity primary key,
+  at        timestamptz not null default now(),
+  course_id uuid,
+  kind      text not null,
+  to_emails text[] not null default '{}',
+  subject   text not null default '',
+  request_id bigint,
+  by_email  text not null default ''
+);
+create index if not exists mail_log_course_idx on public.mail_log (course_id, at desc);
+alter table public.mail_log enable row level security;
+revoke all on public.mail_log from anon;
+grant select on public.mail_log to authenticated;
+drop policy if exists mail_log_sel on public.mail_log;
+create policy mail_log_sel on public.mail_log for select to authenticated
+  using (public.is_admin() or (course_id is not null and public.can_manage_course(course_id)));
+
+alter table public.courses add column if not exists notify      text not null default 'digest';
+alter table public.courses add column if not exists notify_mute text[] not null default '{}';
+alter table public.courses add column if not exists notify_last timestamptz not null default now();
+do $$ begin
+  alter table public.courses add constraint courses_notify_chk check (notify in ('off', 'instant', 'digest', 'both'));
+exception when duplicate_object then null; end $$;
+
+create table if not exists public.cohost_invites (
+  course_id uuid not null references public.courses(id) on delete cascade,
+  email     text not null,
+  sent_at   timestamptz not null default now(),
+  sent_by   text not null default '',
+  via       text not null default 'system',
+  primary key (course_id, email)
+);
+alter table public.cohost_invites enable row level security;
+revoke all on public.cohost_invites from anon;
+grant select on public.cohost_invites to authenticated;
+drop policy if exists cohost_invites_sel on public.cohost_invites;
+create policy cohost_invites_sel on public.cohost_invites for select to authenticated using (public.can_manage_course(course_id));
+
+-- ชื่อที่แสดงของบัญชี (จาก Google) · ไม่มี → ส่วนหน้า @
+create or replace function public.user_display_name(p_email text) returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce((select nullif(trim(coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', '')), '')
+                     from auth.users u where lower(u.email) = lower(p_email) limit 1), split_part(p_email, '@', 1))
+$$;
+revoke execute on function public.user_display_name(text) from public, anon, authenticated;
+
+-- ส่งงานให้ Apps Script (ไม่รอผล) · ยังไม่ตั้งค่า = ข้ามเงียบๆ
+create or replace function public.mail_send(p_course uuid, p_kind text, p_to text[], p_subject text, p_payload jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare m mail_config; v_req bigint;
+begin
+  select * into m from mail_config where id = 1;
+  if coalesce(m.webhook_url, '') !~ '^https://script\.google\.com/' or coalesce(m.token, '') = '' then return false; end if;
+  if coalesce(array_length(p_to, 1), 0) = 0 then return false; end if;
+  select net.http_post(url := m.webhook_url,
+           body := p_payload || jsonb_build_object('token', m.token, 'kind', p_kind, 'to', to_jsonb(p_to), 'subject', p_subject, 'site', m.site_url),
+           headers := '{"Content-Type":"application/json"}'::jsonb, timeout_milliseconds := 10000)
+    into v_req;
+  insert into mail_log (course_id, kind, to_emails, subject, request_id, by_email)
+  values (p_course, p_kind, p_to, left(p_subject, 300), v_req, coalesce(auth.jwt() ->> 'email', 'ระบบ'));
+  return true;
+end $$;
+revoke execute on function public.mail_send(uuid, text, text[], text, jsonb) from public, anon, authenticated;
+
+-- ข้อมูลงานสำหรับอีเมล
+create or replace function public.mail_course_info(p_course uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'id', c.id, 'title', c.title, 'location', c.location, 'owner_email', c.owner_email,
+    'owner_name', public.user_display_name(c.owner_email),
+    'rounds', coalesce((select jsonb_agg(jsonb_build_object('label', coalesce(t.round_label, t.title), 'starts_at', t.starts_at, 'ends_at', t.ends_at,
+                  'seats', public.round_seats(t), 'booked', (select count(*) from bookings b where b.training_id = t.id))
+                  order by t.round_no nulls last, t.starts_at) from trainings t where t.course_id = c.id), '[]'::jsonb),
+    'booked', (select count(*) from bookings b where b.course_id = c.id))
+  from courses c where c.id = p_course
+$$;
+revoke execute on function public.mail_course_info(uuid) from public, anon, authenticated;
+
+-- ผู้รับแจ้งเตือนของงาน = เจ้าของ + ผู้จัดร่วม − คนที่ปิดรับ
+create or replace function public.course_recipients(c courses) returns text[]
+language sql stable as $$
+  select coalesce(array_agg(distinct e), '{}') from unnest(array[lower(c.owner_email)] || coalesce(c.cohosts, '{}')) e
+   where e <> '' and not (e = any(coalesce(c.notify_mute, '{}')))
+$$;
+
+-- ---------- เชิญผู้จัดร่วม ----------
+-- ผ่านระบบกลาง (Apps Script) · ชื่อผู้ส่ง = ผู้เชิญ (ผ่าน Quiz Live) · ตอบกลับถึงผู้เชิญ
+create or replace function public.send_cohost_invite(p_course uuid, p_email text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare c courses; e text := lower(trim(coalesce(p_email, ''))); me text := lower(coalesce(auth.jwt() ->> 'email', '')); ok boolean;
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  if not (e = any(coalesce(c.cohosts, '{}'))) then raise exception 'อีเมลนี้ไม่ได้อยู่ในรายชื่อผู้จัดร่วม'; end if;
+  ok := public.mail_send(c.id, 'invite', array[e], '[Quiz Live] คุณได้รับเชิญเป็นผู้จัดร่วม · ' || c.title,
+          jsonb_build_object('course', public.mail_course_info(c.id), 'to_email', e, 'inviter_email', me, 'inviter_name', public.user_display_name(me),
+                             'reply_to', me, 'from_name', public.user_display_name(me) || ' (ผ่าน Quiz Live)'));
+  if not ok then raise exception 'ยังไม่ได้ตั้งค่าการส่งอีเมล (ผู้ดูแลระบบตั้งได้ที่กล่อง ⚙ ผู้ดูแลระบบ)'; end if;
+  insert into cohost_invites (course_id, email, sent_at, sent_by, via) values (c.id, e, now(), me, 'system')
+  on conflict (course_id, email) do update set sent_at = now(), sent_by = excluded.sent_by, via = excluded.via;
+  perform public.log_course(c.id, null, 'ส่งคำเชิญผู้จัดร่วม', jsonb_build_object('name', e));
+  return jsonb_build_object('ok', true, 'via', 'system');
+end $$;
+
+-- ส่งเองจาก Gmail ของผู้เชิญ (ส่วนหน้า) แล้วบันทึกไว้
+create or replace function public.record_cohost_invite(p_course uuid, p_email text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare e text := lower(trim(coalesce(p_email, ''))); me text := lower(coalesce(auth.jwt() ->> 'email', ''));
+begin
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  if not exists (select 1 from courses where id = p_course and e = any(coalesce(cohosts, '{}'))) then raise exception 'อีเมลนี้ไม่ได้อยู่ในรายชื่อผู้จัดร่วม'; end if;
+  insert into cohost_invites (course_id, email, sent_at, sent_by, via) values (p_course, e, now(), me, 'gmail')
+  on conflict (course_id, email) do update set sent_at = now(), sent_by = excluded.sent_by, via = excluded.via;
+  perform public.log_course(p_course, null, 'ส่งคำเชิญผู้จัดร่วม', jsonb_build_object('name', e, 'by', 'gmail'));
+  return jsonb_build_object('ok', true, 'via', 'gmail');
+end $$;
+
+-- สถานะผู้จัดร่วม: ส่งคำเชิญเมื่อไหร่ · เข้าระบบแล้วหรือยัง
+create or replace function public.course_team_status(p_course uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare c courses;
+begin
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์ดูงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  return jsonb_build_object(
+    'mail_ready', exists (select 1 from mail_config where id = 1 and webhook_url ~ '^https://script\.google\.com/' and token <> ''),
+    'owner_name', public.user_display_name(c.owner_email),
+    'people', coalesce((select jsonb_agg(jsonb_build_object('email', e,
+        'invited_at', (select i.sent_at from cohost_invites i where i.course_id = c.id and i.email = e),
+        'last_sign_in', (select max(u.last_sign_in_at) from auth.users u where lower(u.email) = e),
+        'name', (select nullif(coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'), '') from auth.users u where lower(u.email) = e limit 1),
+        'muted', e = any(c.notify_mute)) order by e)
+      from unnest(coalesce(c.cohosts, '{}')) e), '[]'::jsonb));
+end $$;
+
+revoke execute on function public.send_cohost_invite(uuid, text), public.record_cohost_invite(uuid, text), public.course_team_status(uuid) from public, anon;
+grant execute on function public.send_cohost_invite(uuid, text), public.record_cohost_invite(uuid, text), public.course_team_status(uuid) to authenticated;
+
+-- ---------- แจ้งเตือนผู้จัด ----------
+-- เหตุการณ์ที่แจ้ง (จากประวัติ): จอง ย้ายรอบ ยกเลิกจอง ลงชื่อย้อนหลัง
+create or replace function public.course_log_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare c courses; v_to text[];
+begin
+  if new.action not in ('จอง', 'ย้ายรอบ', 'ยกเลิกจอง', 'ลงชื่อย้อนหลัง') or new.actor like 'ระบบ%' then return null; end if;
+  select * into c from courses where id = new.course_id;
+  if c.notify not in ('instant', 'both') then return null; end if;
+  v_to := public.course_recipients(c);
+  -- ส่งอีเมลไม่สำเร็จต้องไม่ทำให้การจองล้ม
+  begin
+  perform public.mail_send(c.id, 'event', v_to,
+    '[Quiz Live] ' || new.action || ' · ' || c.title || coalesce(' · ' || coalesce(new.detail ->> 'to', new.detail ->> 'from'), ''),
+    jsonb_build_object('course', public.mail_course_info(c.id), 'event', jsonb_build_object('action', new.action, 'at', new.at, 'actor', new.actor, 'detail', new.detail),
+                       'reply_to', c.owner_email, 'from_name', public.user_display_name(c.owner_email) || ' (ผ่าน Quiz Live)'));
+  exception when others then raise warning 'mail: %', sqlerrm;
+  end;
+  return null;
+end $$;
+drop trigger if exists course_log_notify on public.course_log;
+create trigger course_log_notify after insert on public.course_log
+  for each row execute function public.course_log_notify();
+
+-- สรุปรายวัน (เรียกจาก pg_cron 17:00 น.) · ส่งเฉพาะงานที่มีความเคลื่อนไหว
+create or replace function public.mail_digest_run() returns int
+language plpgsql security definer set search_path = public as $$
+declare c courses; v_items jsonb; v_n int := 0; v_now timestamptz := now();
+begin
+  for c in select * from courses where notify in ('digest', 'both') loop
+    select jsonb_agg(jsonb_build_object('action', l.action, 'at', l.at, 'actor', l.actor, 'detail', l.detail) order by l.at)
+      into v_items
+      from course_log l
+     where l.course_id = c.id and l.at > c.notify_last and l.at <= v_now
+       and l.action in ('จอง', 'ย้ายรอบ', 'ยกเลิกจอง', 'ลงชื่อย้อนหลัง', 'เพิ่มรายชื่อ', 'เอาออกจากรายชื่อ')
+       and l.actor not like 'ระบบ%';
+    if v_items is not null then
+      perform public.mail_send(c.id, 'digest', public.course_recipients(c),
+        '[Quiz Live] สรุปวันนี้ · ' || c.title || ' · ' ||
+          concat_ws(' · ',
+            nullif('จองใหม่ ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' = 'จอง'), 'จองใหม่ 0'),
+            nullif('ย้าย ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' = 'ย้ายรอบ'), 'ย้าย 0'),
+            nullif('ยกเลิก ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' = 'ยกเลิกจอง'), 'ยกเลิก 0'),
+            nullif('อื่นๆ ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' not in ('จอง', 'ย้ายรอบ', 'ยกเลิกจอง')), 'อื่นๆ 0')),
+        jsonb_build_object('course', public.mail_course_info(c.id), 'items', v_items, 'since', c.notify_last,
+                           'reply_to', c.owner_email, 'from_name', public.user_display_name(c.owner_email) || ' (ผ่าน Quiz Live)'));
+      v_n := v_n + 1;
+    end if;
+    update courses set notify_last = v_now where id = c.id;
+  end loop;
+  return v_n;
+end $$;
+revoke execute on function public.mail_digest_run() from public, anon, authenticated;
+
+-- ---------- ผู้ดูแลระบบ: ตั้งค่า / ทดสอบ ----------
+create or replace function public.mail_config_status() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select case when public.is_admin() then jsonb_build_object(
+    'ready', webhook_url ~ '^https://script\.google\.com/' and token <> '',
+    'url', case when webhook_url <> '' then left(webhook_url, 48) || '…' end,
+    'updated_at', updated_at, 'updated_by', updated_by,
+    'sent_7d', (select count(*) from mail_log where at > now() - interval '7 days')) end
+  from mail_config where id = 1
+$$;
+create or replace function public.set_mail_config(p_url text, p_token text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if trim(coalesce(p_url, '')) !~ '^https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec$' then
+    raise exception 'URL ต้องเป็นลิงก์ Web app ของ Apps Script (ลงท้ายด้วย /exec)';
+  end if;
+  if length(trim(coalesce(p_token, ''))) < 16 then raise exception 'รหัสลับสั้นเกินไป (คัดลอกจากฟังก์ชัน setup ใน Apps Script)'; end if;
+  update mail_config set webhook_url = trim(p_url), token = trim(p_token), updated_at = now(),
+         updated_by = coalesce(auth.jwt() ->> 'email', '') where id = 1;
+  return public.mail_config_status();
+end $$;
+create or replace function public.send_test_mail() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare me text := lower(coalesce(auth.jwt() ->> 'email', ''));
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if not public.mail_send(null, 'test', array[me], '[Quiz Live] ทดสอบการส่งอีเมล', jsonb_build_object('reply_to', me, 'from_name', 'Quiz Live')) then
+    raise exception 'ยังไม่ได้ตั้งค่า URL และรหัสลับ';
+  end if;
+  return jsonb_build_object('ok', true, 'to', me);
+end $$;
+-- ผู้จัด: ผลการส่งล่าสุดของงาน (ดูว่าส่งสำเร็จไหม)
+create or replace function public.course_mail_log(p_course uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์ดูงานนี้'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('at', l.at, 'kind', l.kind, 'to', l.to_emails, 'subject', l.subject,
+      'status', (select r.status_code from net._http_response r where r.id = l.request_id)) order by l.at desc)
+    from (select * from mail_log where course_id = p_course order by at desc limit 50) l), '[]'::jsonb);
+end $$;
+revoke execute on function public.mail_config_status(), public.set_mail_config(text, text), public.send_test_mail(), public.course_mail_log(uuid) from public, anon;
+grant execute on function public.mail_config_status(), public.set_mail_config(text, text), public.send_test_mail(), public.course_mail_log(uuid) to authenticated;
+
+-- ผู้จัดตั้งค่าแจ้งเตือนผ่าน update courses (notify, notify_mute) ตามสิทธิ์เดิม
+
+-- ไม่บันทึกการเลื่อนเวลาสรุปรายวันเป็นการแก้ตั้งค่า
+create or replace function public.courses_log() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare o jsonb := to_jsonb(old); n jsonb := to_jsonb(new); k text; ch jsonb := '{}'::jsonb;
+begin
+  for k in select jsonb_object_keys(n) loop
+    if k not in ('updated_at', 'created_at', 'notify_last') and o -> k is distinct from n -> k then
+      ch := ch || jsonb_build_object(k, jsonb_build_object('old', case when k = 'finish_pin' then '"****"'::jsonb else o -> k end,
+                                                         'new', case when k = 'finish_pin' then '"****"'::jsonb else n -> k end));
+    end if;
+  end loop;
+  if ch <> '{}'::jsonb then perform public.log_course(new.id, null, 'แก้ตั้งค่างาน', ch); end if;
+  return null;
+end $$;
+
+-- สรุปรายวัน 17:00 น. (10:00 UTC)
+create extension if not exists pg_cron;
+select cron.unschedule(jobid) from cron.job where jobname = 'quizlive-mail-digest';
+select cron.schedule('quizlive-mail-digest', '0 10 * * *', 'select public.mail_digest_run()');

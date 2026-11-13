@@ -1042,6 +1042,14 @@ const Admin = {
           <p class="hint">1 โรงพยาบาลต่อ 1 บรรทัด · ถ้าว่าง ระบบจะไม่ถามโรงพยาบาล</p>
           <textarea class="inp" id="hosplist" rows="3"></textarea>
           <div class="row"><span class="grow"></span><button class="btn sm" id="hospsave">บันทึกรายชื่อโรงพยาบาล</button></div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding:12px 0 16px;display:grid;gap:8px">
+          <b>อีเมลระบบ (Google Apps Script)</b>
+          <p class="hint" id="mailst">กำลังโหลด…</p>
+          <p class="hint">ใช้ส่งคำเชิญผู้จัดร่วมและแจ้งเตือนผู้จัด · วิธีติดตั้งอยู่ด้านบนของไฟล์ <a href="https://github.com/saman-ng-PLPN/Quiz-Live-PLPN/blob/main/apps-script/Code.gs" target="_blank" rel="noopener">apps-script/Code.gs</a></p>
+          <input class="inp" id="mailurl" placeholder="URL ของ Web app (https://script.google.com/macros/s/…/exec)" autocomplete="off">
+          <input class="inp" id="mailtok" placeholder="รหัสลับ (TOKEN จากฟังก์ชัน setup)" autocomplete="off" type="password">
+          <div class="row"><span class="grow"></span><button class="btn light sm" id="mailtest" type="button">ส่งอีเมลทดสอบถึงฉัน</button><button class="btn sm" id="mailsave" type="button">บันทึก</button></div>
         </div></details>` : ''}`);
     bindShell();
     if (this.isAdmin) this.bindAdmins();
@@ -1164,7 +1172,15 @@ const Admin = {
       try { draw(await rpc('list_admins')); list.dataset.loaded = 1;
             dl.value = (await rpc('list_departments')).join('\n'); dc();
             $('#hosplist').value = (await rpc('list_hospitals')).join('\n'); } catch (e) { toast(errMsg(e), true); }
+      mst();
     });
+    const mst = async () => { try { const m = await rpc('mail_config_status');
+      $('#mailst').innerHTML = m && m.ready ? `<span style="color:#1b6b42">✓ ตั้งค่าแล้ว</span> · ${esc(m.url)} · ตั้งโดย ${esc(m.updated_by)} · ส่ง 7 วันล่าสุด ${m.sent_7d} ฉบับ` : '<b>ยังไม่ได้ตั้งค่า</b> · ยังไม่มีการส่งอีเมล'; } catch (e) { $('#mailst').textContent = errMsg(e); } };
+    $('#mailsave').onclick = async () => {
+      try { await rpc('set_mail_config', { p_url: $('#mailurl').value.trim(), p_token: $('#mailtok').value.trim() }); $('#mailurl').value = ''; $('#mailtok').value = ''; toast('บันทึกแล้ว · กดส่งอีเมลทดสอบ'); mst(); }
+      catch (e) { toast(errMsg(e), true); } };
+    $('#mailtest').onclick = async () => {
+      try { const r = await rpc('send_test_mail'); toast(`ส่งแล้ว · ตรวจกล่องจดหมาย ${r.to} ใน 1 นาที`); } catch (e) { toast(errMsg(e), true); } };
     $('#hospsave').onclick = async () => {
       try { const r = await rpc('set_hospitals', { p_names: $('#hosplist').value.split('\n').map(x => x.trim()).filter(Boolean) });
             $('#hosplist').value = r.join('\n'); toast(`บันทึกแล้ว ${r.length} โรงพยาบาล`); }
@@ -3013,30 +3029,85 @@ const Course = {
     };
     draw();
   },
-  renderTeam(box) {
-    const c = this.c, list = c.cohosts || [];
-    box.innerHTML = `<section class="tcard" style="max-width:720px">
+  async renderTeam(box) {
+    const c = this.c, list = c.cohosts || [], me = (this.user.email || '').toLowerCase();
+    box.innerHTML = '<div class="center-msg" style="min-height:20vh"><div class="spinner"></div></div>';
+    let st = { people: [], mail_ready: false };
+    try { st = await rpc('course_team_status', { p_course: c.id }); } catch (e) { toast(errMsg(e), true); }
+    const P = Object.fromEntries((st.people || []).map(p => [p.email, p]));
+    const mute = c.notify_mute || [], canMail = st.mail_ready || Mailer.gmailOn();
+    const stat = e => { const p = P[e] || {};
+      return [p.invited_at ? `✓ ส่งคำเชิญแล้ว ${thDate(p.invited_at)} ${thTime(p.invited_at)}` : 'ยังไม่ได้ส่งคำเชิญ',
+              p.last_sign_in ? `<span style="color:#1b6b42">เข้าระบบแล้ว</span>` : '<span style="color:#8a5a00">ยังไม่เคยเข้าระบบ</span>'].join(' · '); };
+    const NM = { off: 'ปิด', instant: 'แจ้งทันที', digest: 'สรุปวันละครั้ง 17:00', both: 'ทั้งสองแบบ' };
+    box.innerHTML = `<div class="cgrid"><div class="ccol"><section class="tcard">
         <h3 style="margin:0">👥 ผู้จัดร่วมของงานนี้</h3>
         <p class="hint" style="margin:0">ผู้จัดร่วมทำได้ทุกอย่างเหมือนเจ้าของงาน กับ<b>ทุกรุ่น</b>ในงานนี้: แก้ตั้งค่า เพิ่ม/แก้รุ่น เปิด-ปิดจอง/ลงชื่อ/Pre/Post
           จัดการผู้เข้าร่วม ลิงก์ลงชื่อย้อนหลัง ดูรายงาน ส่งออก Excel และเพิ่ม/นำออกผู้จัดร่วม · <b>ยกเว้น ลบงานอบรม</b> (เฉพาะเจ้าของและผู้ดูแลระบบ)
           · การแก้ไขทุกครั้งบันทึกไว้ที่แท็บ <a href="#course/${c.id}:log">ประวัติ</a></p>
-        <div class="it" style="border-color:var(--line)"><span class="grow"><b>${esc(c.owner_email || '')}</b> <span class="hint">เจ้าของงาน</span></span></div>
-        ${list.map(e => `<div class="it" style="border-color:var(--line)"><span class="grow">${esc(e)}</span><button class="btn danger sm" data-tmrm="${esc(e)}">นำออก</button></div>`).join('')
+        <div class="it" style="border-color:var(--line)"><span class="grow"><b>${esc(st.owner_name || '')}</b> ${esc(c.owner_email || '')} <span class="hint">เจ้าของงาน</span></span></div>
+        ${list.map(e => `<div class="it" style="border-color:var(--line);flex-wrap:wrap"><span class="grow" style="min-width:200px">${P[e] && P[e].name ? `<b>${esc(P[e].name)}</b> ` : ''}${esc(e)}
+            <br><small class="hint">${stat(e)}</small></span>
+            ${canMail ? `<button class="btn light sm" data-tminv="${esc(e)}">${P[e] && P[e].invited_at ? 'ส่งเชิญอีกครั้ง' : '✉ ส่งคำเชิญ'}</button>` : ''}
+            <button class="btn danger sm" data-tmrm="${esc(e)}">นำออก</button></div>`).join('')
           || '<p class="hint" style="margin:0">ยังไม่มีผู้จัดร่วม</p>'}
         <form class="row" id="tm-form" autocomplete="off" style="gap:8px">
           <input class="inp grow" id="tm-email" placeholder="อีเมล หรือชื่อหน้า @ (เช่น somchai.j)" style="min-width:0">
-          <button class="btn sm">+ เพิ่มผู้จัดร่วม</button></form>
-        <p class="hint" style="margin:0">ผู้จัดร่วมต้องเข้าสู่ระบบด้วยอีเมล @${esc(CFG.ALLOWED_DOMAIN || '')} แล้วจะเห็นงานนี้ในหน้าผู้จัดของตัวเอง</p></section>`;
-    const save = async (emails, msg) => {
-      try { c.cohosts = await rpc('set_course_cohosts', { p_course: c.id, p_emails: emails }); toast(msg); this.render(); }
+          <button class="btn sm">+ เพิ่ม${canMail ? 'และส่งคำเชิญ' : 'ผู้จัดร่วม'}</button></form>
+        ${canMail ? `<label class="switch hint"><input type="checkbox" id="tm-send" checked> ส่งอีเมลเชิญทันทีเมื่อเพิ่ม${Mailer.gmailOn() ? ' (ส่งจาก Gmail ของคุณ)' : ''}</label>`
+          : '<p class="hint" style="margin:0">ยังไม่ได้ตั้งค่าการส่งอีเมล · ผู้ดูแลระบบตั้งได้ที่กล่อง ⚙ ผู้ดูแลระบบ › อีเมลระบบ · ระหว่างนี้แจ้งผู้จัดร่วมเองว่าเข้าที่ ' + esc(location.host) + '</p>'}
+      </section></div>
+      <div class="ccol"><section class="tcard">
+        <h3 style="margin:0">✉ การแจ้งเตือนทางอีเมล</h3>
+        <p class="hint" style="margin:0">แจ้งผู้จัดเมื่อมีคน จอง · ย้ายรอบ · ยกเลิก · ลงชื่อย้อนหลัง${st.mail_ready ? '' : ' · <b>ยังไม่ได้ตั้งค่าการส่งอีเมล</b> (ตั้งค่าไว้ได้ จะเริ่มส่งเมื่อผู้ดูแลระบบตั้งค่าเสร็จ)'}</p>
+        <div class="seg" role="radiogroup" aria-label="รูปแบบแจ้งเตือน" style="flex-wrap:wrap">${Object.entries(NM).map(([k, t]) =>
+          `<label><input type="radio" name="nt" value="${k}" ${(c.notify || 'digest') === k ? 'checked' : ''}>${t}</label>`).join('')}</div>
+        <div><b style="font-size:14px">ส่งถึง</b>
+          ${[c.owner_email, ...list].filter(Boolean).map(e => `<label class="switch"><input type="checkbox" data-mute="${esc(e.toLowerCase())}" ${mute.includes(e.toLowerCase()) ? '' : 'checked'}> ${esc(e)}${e.toLowerCase() === me ? ' (คุณ)' : ''}</label>`).join('')}</div>
+        <p class="hint" style="margin:0">สรุปรายวันส่งเวลา 17:00 น. เฉพาะวันที่มีความเคลื่อนไหว · ผู้ส่งแสดงชื่อเจ้าของงาน (ผ่าน Quiz Live) และตอบกลับถึงเจ้าของงาน</p>
+        <details><summary class="hint" style="cursor:pointer">อีเมลที่ส่งล่าสุด</summary><div id="tm-mlog" class="hint">กำลังโหลด…</div></details>
+      </section></div></div>`;
+    const save = async (emails, msg, invite) => {
+      try { c.cohosts = await rpc('set_course_cohosts', { p_course: c.id, p_emails: emails });
+        toast(msg); if (invite) await this.sendInvite(invite); this.render(); }
       catch (e) { toast(errMsg(e), true); }
     };
     $('#tm-form').onsubmit = e => { e.preventDefault();
       let v = $('#tm-email').value.trim().toLowerCase(); if (!v) return;
       if (!v.includes('@') && CFG.ALLOWED_DOMAIN) v += '@' + CFG.ALLOWED_DOMAIN.toLowerCase();
       if (list.includes(v)) return toast('มีในรายชื่อแล้ว', true);
-      save([...list, v], `เพิ่ม ${v} แล้ว`); };
+      save([...list, v], `เพิ่ม ${v} แล้ว`, $('#tm-send') && $('#tm-send').checked ? v : null); };
     $$('[data-tmrm]', box).forEach(b => b.onclick = () => { if (confirm(`นำ ${b.dataset.tmrm} ออกจากผู้จัดร่วม?`)) save(list.filter(x => x !== b.dataset.tmrm), 'นำออกแล้ว'); });
+    $$('[data-tminv]', box).forEach(b => b.onclick = async () => { b.disabled = true; await this.sendInvite(b.dataset.tminv); this.renderBody(); });
+    const upd = async (patch, msg) => { const { data, error } = await sb.from('courses').update(patch).eq('id', c.id).select('*').single();
+      if (error) { toast(errMsg(error), true); return this.renderBody(); } this.c = data; toast(msg); };
+    $$('input[name=nt]', box).forEach(r => r.onchange = () => upd({ notify: r.value }, 'แจ้งเตือน: ' + NM[r.value]));
+    $$('[data-mute]', box).forEach(x => x.onchange = () => { const m = new Set(this.c.notify_mute || []);
+      x.checked ? m.delete(x.dataset.mute) : m.add(x.dataset.mute); upd({ notify_mute: [...m] }, x.checked ? 'เปิดรับแจ้งเตือนแล้ว' : 'ปิดรับแจ้งเตือนแล้ว'); });
+    $('#tm-mlog').closest('details').addEventListener('toggle', async () => {
+      const el = $('#tm-mlog'); if (el.dataset.ok) return; el.dataset.ok = 1;
+      try { const l = await rpc('course_mail_log', { p_course: c.id });
+        el.innerHTML = l.length ? l.map(x => `<div>${esc(thDate(x.at))} ${esc(thTime(x.at))} · ${esc({ invite: 'คำเชิญ', event: 'แจ้งทันที', digest: 'สรุปรายวัน' }[x.kind] || x.kind)} → ${esc(x.to.join(', '))}
+          ${x.status == null ? '<span>(กำลังส่ง)</span>' : x.status === 200 || x.status === 302 ? '<span style="color:#1b6b42">✓</span>' : `<span style="color:#a32020">ผิดพลาด ${x.status}</span>`}</div>`).join('') : 'ยังไม่มี';
+      } catch (e) { el.textContent = errMsg(e); } });
+  },
+  // คำเชิญ: มี Google Client ID → ส่งจาก Gmail ของคนที่กด · ไม่มี → ส่งผ่านระบบกลาง (ชื่อผู้ส่ง = คนที่กด)
+  async sendInvite(email) {
+    const c = this.c, u = this.user, name = (u.user_metadata && (u.user_metadata.full_name || u.user_metadata.name)) || (u.email || '').split('@')[0];
+    if (Mailer.gmailOn()) {
+      try {
+        const m = MailTpl.invite({ site: location.origin + location.pathname, to_email: email, inviter_email: u.email, inviter_name: name,
+          course: { id: c.id, title: c.title, location: c.location, owner_email: c.owner_email, booked: 0,
+                    rounds: this.rows.map(r => ({ label: r.label, starts_at: r.starts_at, ends_at: r.ends_at, seats: r.seats, booked: r.booked })) } });
+        await Mailer.gmail(email, m.subject, m.html, m.text, u.email);
+        await rpc('record_cohost_invite', { p_course: c.id, p_email: email });
+        return toast(`ส่งคำเชิญจาก Gmail ของคุณถึง ${email} แล้ว`);
+      } catch (e) {
+        if (!confirm(`ส่งจาก Gmail ไม่สำเร็จ (${errMsg(e)})\nส่งผ่านระบบกลางแทนไหม?`)) return;
+      }
+    }
+    try { await rpc('send_cohost_invite', { p_course: c.id, p_email: email }); toast(`ส่งคำเชิญถึง ${email} แล้ว`); }
+    catch (e) { toast(errMsg(e), true); }
   },
   async renderLog(box) {
     const c = this.c; box.innerHTML = '<div class="center-msg" style="min-height:20vh"><div class="spinner"></div></div>';
@@ -3453,6 +3524,137 @@ const Entry = {
       ${note ? `<p class="hint">${esc(note)}</p>` : ''}
       <button class="btn light" id="again">ลงชื่อให้คนถัดไป</button></div></main>`;
     $('#again').onclick = () => { save('quizlive.tester'); this.form(); };
+  }
+};
+
+// ===== แม่แบบอีเมล Quiz Live (ใช้ร่วมกันทั้งหน้าเว็บและ Apps Script) =====
+var MailTpl = (function () {
+  var TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  var TH_D = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  function bkk(s) { var d = new Date(s); return new Date(d.getTime() + 7 * 3600e3); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function dateTH(s, wd) { if (!s) return ''; var d = bkk(s); return (wd ? TH_D[d.getUTCDay()] + ' ' : '') + d.getUTCDate() + ' ' + TH_M[d.getUTCMonth()] + ' ' + String(d.getUTCFullYear() + 543).slice(2); }
+  function timeTH(s) { if (!s) return ''; var d = bkk(s); return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function link(site, hash) { return String(site || '').replace(/[#?].*$/, '').replace(/\/?$/, '/') + hash; }
+  var LBL = 'color:#64748b;padding:3px 14px 3px 0;white-space:nowrap;vertical-align:top';
+  function rows(list) { return '<table role="presentation" cellpadding="0" cellspacing="0" style="font-size:15px;margin:12px 0">' +
+    list.filter(function (r) { return r[1]; }).map(function (r) { return '<tr><td style="' + LBL + '">' + esc(r[0]) + '</td><td>' + r[1] + '</td></tr>'; }).join('') + '</table>'; }
+  function btn(href, text) { return '<a href="' + esc(href) + '" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 26px;border-radius:8px;font-size:16px">' + esc(text) + '</a>'; }
+  function tag(t, kind) { var c = { pre: ['#e3efff', '#1f5ea8'], post: ['#fff1d6', '#8a5a00'], warn: ['#fde8e8', '#a32020'], late: ['#f3e8ff', '#6b21a8'] }[kind] || ['#e9eef3', '#475569'];
+    return '<span style="background:' + c[0] + ';color:' + c[1] + ';border-radius:99px;padding:2px 10px;font-size:13px;font-weight:600;white-space:nowrap">' + esc(t) + '</span>'; }
+  function shell(bar, body, foot) {
+    return '<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>' +
+      '<body style="margin:0;background:#eef2f7;font-family:Sarabun,\'Leelawadee UI\',Tahoma,Arial,sans-serif;color:#1e293b">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7"><tr><td align="center" style="padding:20px 12px">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden">' +
+      '<tr><td style="background:#1e3a8a;color:#ffffff;padding:14px 22px;font-size:15px;font-weight:700">' + esc(bar) + '</td></tr>' +
+      '<tr><td style="padding:22px;font-size:15px;line-height:1.6">' + body + '</td></tr>' +
+      '<tr><td style="border-top:1px solid #e2e8f0;padding:14px 22px;font-size:12.5px;color:#64748b">' + foot + '</td></tr>' +
+      '</table></td></tr></table></body></html>';
+  }
+  function roundsLine(c) { var r = c.rounds || []; if (!r.length) return '';
+    var days = []; r.forEach(function (x) { var d = dateTH(x.starts_at, true); if (d && days.indexOf(d) < 0) days.push(d); });
+    return esc((days.length ? days.join(', ') + ' · ' : '') + r.length + ' รอบ' + (r.length <= 4 ? ' (' + r.map(function (x) { return x.label; }).join(' / ') + ')' : '')); }
+  function roundWhen(c, label) { var r = (c.rounds || []).filter(function (x) { return x.label === label; })[0];
+    return r && r.starts_at ? ' · ' + dateTH(r.starts_at, true) + ' ' + timeTH(r.starts_at) + (r.ends_at ? '–' + timeTH(r.ends_at) : '') + ' น.' : ''; }
+  function seatsBox(c, label) { var r = (c.rounds || []).filter(function (x) { return x.label === label; })[0]; if (!r) return '';
+    return '<div style="background:#f1f5f9;border-radius:10px;padding:10px 14px;margin:0 0 16px;font-size:14px">' + esc(label) + ' จองแล้ว <b>' + r.booked + (r.seats ? ' / ' + r.seats : '') + '</b>' + (r.seats ? ' ที่นั่ง' : ' คน') + ' · ทั้งงาน ' + c.booked + ' คน</div>'; }
+  var ACT = { 'จอง': 'pre', 'ย้ายรอบ': 'post', 'ยกเลิกจอง': 'warn', 'ลงชื่อย้อนหลัง': 'late', 'เพิ่มรายชื่อ': 'pre', 'เอาออกจากรายชื่อ': 'warn' };
+  function by(e) { var d = e.detail || {}; return d.by === 'admin' ? 'ผู้จัดเพิ่มให้ (' + e.actor + ')' : d.by === 'sheet' ? 'ระบบเดิม' : /@/.test(e.actor || '') ? 'ผู้จัด (' + e.actor + ')' : 'ทำเองผ่าน QR'; }
+
+  return {
+    // คำเชิญผู้จัดร่วม
+    invite: function (d) {
+      var c = d.course || {}, url = link(d.site, '#course/' + c.id);
+      var body = '<div style="font-size:21px;font-weight:700;margin-bottom:8px">คุณได้รับเชิญเป็นผู้จัดร่วม</div>' +
+        '<div><b>' + esc(d.inviter_name) + '</b> (' + esc(d.inviter_email) + ') เพิ่มคุณเป็นผู้จัดร่วมของงานอบรมนี้</div>' +
+        rows([['งานอบรม', '<b>' + esc(c.title) + '</b>'], ['วันที่', roundsLine(c)], ['สถานที่', esc(c.location || '')], ['เจ้าของงาน', esc(c.owner_email)]]) +
+        btn(url, 'เปิดงานอบรม') +
+        '<div style="background:#f1f5f9;border-radius:10px;padding:12px 16px;margin:18px 0;font-size:14px"><b>เข้าระบบครั้งแรก</b><ol style="margin:4px 0 0;padding-left:20px">' +
+        '<li>กดปุ่ม “เปิดงานอบรม” หรือเข้า ' + esc(String(d.site || '').replace(/^https?:\/\//, '').replace(/\/$/, '')) + '</li>' +
+        '<li>กด “เข้าสู่ระบบด้วย Google” แล้วเลือกอีเมล <b>' + esc(d.to_email || '') + '</b></li>' +
+        '<li>งานนี้จะอยู่ในหน้าแรก หัวข้อ “งานอบรม”</li></ol></div>' +
+        '<b>สิ่งที่ผู้จัดร่วมทำได้</b><ul style="margin:4px 0 0;padding-left:20px;font-size:14px">' +
+        '<li>เปิด-ปิดรับจอง ลงชื่อ Pre/Post ของทุกรุ่น</li><li>เพิ่ม/แก้ผู้เข้าร่วม ย้ายรอบ สร้างลิงก์ลงชื่อย้อนหลัง</li>' +
+        '<li>ดูรายงาน พิมพ์ใบลงชื่อ ส่งออก Excel · แก้ตั้งค่างาน</li></ul>' +
+        '<div style="font-size:13px;color:#64748b;margin-top:6px">ลบงานอบรมไม่ได้ (เฉพาะเจ้าของงาน) · การแก้ไขทุกอย่างบันทึกในแท็บ “ประวัติ”</div>';
+      return { subject: '[Quiz Live] คุณได้รับเชิญเป็นผู้จัดร่วม · ' + c.title,
+        html: shell('Quiz Live · ระบบงานอบรม', body, 'ถ้าไม่ได้คาดว่าจะได้รับเมลนี้ ตอบกลับเพื่อแจ้งผู้เชิญได้ · อีเมลนี้ส่งจาก Quiz Live'),
+        text: d.inviter_name + ' (' + d.inviter_email + ') เพิ่มคุณเป็นผู้จัดร่วมของงานอบรม "' + c.title + '"\nเปิดงาน: ' + url +
+          '\nเข้าสู่ระบบด้วย Google โดยใช้อีเมล ' + (d.to_email || '') + '\n' };
+    },
+    // แจ้งทันที 1 เหตุการณ์
+    event: function (d) {
+      var c = d.course || {}, e = d.event || {}, x = e.detail || {}, url = link(d.site, '#course/' + c.id + ':people');
+      var head = { 'จอง': 'มีผู้จองใหม่', 'ย้ายรอบ': 'มีผู้ย้ายรอบ', 'ยกเลิกจอง': 'มีผู้ยกเลิกการจอง', 'ลงชื่อย้อนหลัง': 'มีผู้ลงชื่อย้อนหลัง' }[e.action] || e.action;
+      var round = x.to || x.from || '';
+      var body = '<div style="font-size:21px;font-weight:700;margin-bottom:4px">' + esc(head) + '</div>' +
+        rows([['ชื่อ-สกุล', '<b>' + esc(x.name) + '</b>'], ['รหัส', esc(x.emp_id)],
+              ['รอบ', x.from && x.to ? esc(x.from) + ' → <b>' + esc(x.to) + '</b>' : '<b>' + esc(round) + '</b>' + esc(roundWhen(c, round))],
+              ['ช่องทาง', tag(by(e), ACT[e.action])], ['เวลา', esc(dateTH(e.at) + ' ' + timeTH(e.at) + ' น.')]]) +
+        seatsBox(c, x.to || x.from) + btn(url, 'เปิดรายชื่อผู้เข้าร่วม');
+      return { subject: d.subject, html: shell('Quiz Live · แจ้งเตือนงานอบรม · ' + c.title, body,
+        'ส่งถึงเจ้าของงานและผู้จัดร่วม · เปลี่ยนเป็นสรุปรายวันหรือปิดได้ที่ งานอบรม › ตั้งค่า › การแจ้งเตือนทางอีเมล'),
+        text: head + ': ' + (x.name || '') + ' ' + (x.from && x.to ? x.from + ' → ' + x.to : round) + '\n' + url + '\n' };
+    },
+    // สรุปรายวัน
+    digest: function (d) {
+      var c = d.course || {}, it = d.items || [], url = link(d.site, '#course/' + c.id + ':people');
+      function n(a) { return it.filter(function (x) { return x.action === a; }).length; }
+      function tile(v, t, bg, fg) { return '<td width="33%" style="padding:4px"><div style="background:' + bg + ';border-radius:10px;padding:8px;text-align:center"><div style="font-size:24px;font-weight:700;color:' + fg + '">' + v + '</div><div style="font-size:13px;color:#475569">' + t + '</div></div></td>'; }
+      var rs = (c.rounds || []).map(function (r) { return '<tr><td style="padding:5px 4px;border-bottom:1px solid #f1f5f9">' + esc(r.label) + (r.starts_at ? ' <span style="color:#64748b">· ' + esc(dateTH(r.starts_at)) + '</span>' : '') +
+        '</td><td align="right" style="padding:5px 4px;border-bottom:1px solid #f1f5f9;white-space:nowrap">' + r.booked + (r.seats ? ' / ' + r.seats : '') + '</td></tr>'; }).join('');
+      var shown = it.slice(-30).reverse();
+      var list = shown.map(function (e) { var x = e.detail || {};
+        return '<tr><td width="44" style="padding:6px 4px;border-bottom:1px solid #f1f5f9;white-space:nowrap;vertical-align:top;color:#64748b">' + esc(timeTH(e.at)) + '</td>' +
+          '<td width="1%" style="padding:6px 8px 6px 4px;border-bottom:1px solid #f1f5f9;vertical-align:top;white-space:nowrap">' + tag(e.action, ACT[e.action]) + '</td>' +
+          '<td style="padding:6px 4px;border-bottom:1px solid #f1f5f9">' + esc(x.name || x.key || '') + (x.dept ? ' · ' + esc(x.dept) : '') +
+          '<br><span style="font-size:13px;color:#64748b">' + esc(x.from && x.to ? x.from + ' → ' + x.to : x.to || x.from || '') + '</span></td></tr>'; }).join('');
+      var body = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+        tile('+' + n('จอง'), 'จองใหม่', '#e3efff', '#1e3a8a') + tile(n('ย้ายรอบ'), 'ย้ายรอบ', '#fff1d6', '#8a5a00') + tile(n('ยกเลิกจอง'), 'ยกเลิก', '#fde8e8', '#a32020') + '</tr></table>' +
+        (rs ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;margin:14px 0"><tr><td style="color:#64748b;font-weight:600;padding:4px;border-bottom:1px solid #e2e8f0">รอบ</td><td align="right" style="color:#64748b;font-weight:600;padding:4px;border-bottom:1px solid #e2e8f0">จองแล้ว</td></tr>' + rs + '</table>' : '') +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;margin:0 0 16px">' + list +
+        (it.length > shown.length ? '<tr><td colspan="3" style="padding:6px 4px;color:#64748b">… และอีก ' + (it.length - shown.length) + ' รายการ (ดูทั้งหมดในระบบ แท็บประวัติ)</td></tr>' : '') + '</table>' +
+        btn(url, 'เปิดงานอบรม');
+      return { subject: d.subject, html: shell('Quiz Live · สรุปงานอบรม · ' + c.title, body,
+        'ส่งเฉพาะวันที่มีความเคลื่อนไหว · ส่งถึงเจ้าของงานและผู้จัดร่วม · ตั้งค่าได้ที่ งานอบรม › ตั้งค่า › การแจ้งเตือนทางอีเมล'),
+        text: 'สรุป ' + c.title + ': จองใหม่ ' + n('จอง') + ' ย้าย ' + n('ย้ายรอบ') + ' ยกเลิก ' + n('ยกเลิกจอง') + '\n' + url + '\n' };
+    },
+    test: function (d) {
+      return { subject: d.subject || '[Quiz Live] ทดสอบการส่งอีเมล', html: shell('Quiz Live', '<div style="font-size:20px;font-weight:700">ส่งอีเมลได้แล้ว ✓</div><p>ระบบอีเมลของ Quiz Live เชื่อมกับ Apps Script เรียบร้อย</p>', 'อีเมลทดสอบจาก Quiz Live'),
+        text: 'ระบบอีเมลของ Quiz Live เชื่อมกับ Apps Script เรียบร้อย' };
+    }
+  };
+})();
+
+// ---------- v14.6 ส่งอีเมลจาก Gmail ของผู้ใช้ (Google Identity Services) — ใช้เมื่อตั้ง GOOGLE_CLIENT_ID ใน config.js ----------
+const Mailer = {
+  gmailOn() { return !!CFG.GOOGLE_CLIENT_ID; },
+  async token(hint) {
+    if (this.tok && this.tokExp > Date.now() + 60e3) return this.tok;
+    await loadScript('https://accounts.google.com/gsi/client');
+    return new Promise((res, rej) => {
+      const tc = google.accounts.oauth2.initTokenClient({ client_id: CFG.GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/gmail.send', hint,
+        callback: r => { if (r.error || !r.access_token) return rej(new Error(r.error_description || r.error || 'ไม่ได้รับอนุญาต'));
+          this.tok = r.access_token; this.tokExp = Date.now() + (r.expires_in || 3000) * 1000; res(r.access_token); },
+        error_callback: e => rej(new Error(e && e.type === 'popup_closed' ? 'ปิดหน้าขออนุญาตก่อน' : 'เบราว์เซอร์บล็อกหน้าต่างขออนุญาต')) });
+      tc.requestAccessToken({ prompt: '' });
+    });
+  },
+  async gmail(to, subject, html, text, from) {
+    const tok = await this.token(from);
+    const b64 = str => { const u = new TextEncoder().encode(str); let bin = ''; u.forEach(x => bin += String.fromCharCode(x)); return btoa(bin); };
+    const wrap = x => x.replace(/.{1,76}/g, '$&\r\n');
+    const bd = 'ql' + Date.now().toString(36);
+    const mime = [`To: ${to}`, `Subject: =?UTF-8?B?${b64(subject)}?=`, 'MIME-Version: 1.0', `Content-Type: multipart/alternative; boundary="${bd}"`, '',
+      `--${bd}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(text)),
+      `--${bd}`, 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', wrap(b64(html)), `--${bd}--`, ''].join('\r\n');
+    const raw = b64(mime).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST',
+      headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw }) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); if (r.status === 401) this.tok = null; throw new Error((j.error && j.error.message) || 'Gmail ' + r.status); }
+    return true;
   }
 };
 
