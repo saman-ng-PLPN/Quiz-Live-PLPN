@@ -4369,7 +4369,7 @@ const Attend = {
           : '<p class="hint" style="margin:0">ลืมลงชื่อ? เลือกรอบด้านบนแล้วสร้าง “ลิงก์ลงชื่อย้อนหลัง” ของรอบนั้น</p>'}</div>
       ${shown.length ? `<div class="tblwrap"><table class="rep"><thead><tr><th class="num">#</th><th>เวลา</th><th>รหัส</th><th>ชื่อ-สกุล</th><th>แผนก</th><th>รพ.</th><th>รอบ</th><th>ที่มา</th><th>ลายเซ็น</th>${fin ? '<th>ลงชื่อจบ</th>' : ''}<th></th></tr></thead>
         <tbody>${shown.map((a, i) => `<tr><td class="num">${i + 1}</td><td>${a.checkin_at ? thTime(a.checkin_at) : '–'}</td><td>${esc(a.emp_id)}</td>
-          <td>${esc(a.full_name)}</td><td>${esc(a.department)}</td><td>${esc(a.hospital || '')}</td><td class="wrap">${esc(a.round ? a.round.label : '')}</td>
+          <td class="wrap" style="min-width:120px">${esc(a.full_name)}</td><td class="wrap" style="min-width:110px">${esc(a.department)}</td><td class="wrap" style="min-width:80px">${esc(a.hospital || '')}</td><td class="wrap" style="min-width:160px">${esc(a.round ? a.round.label : '')}</td>
           <td>${a.walk_in ? '<span class="phase post">walk-in</span>' : '<span class="phase pre">จอง</span>'}${a.late ? ' <span class="phase late">ย้อนหลัง</span>' : ''}${a.source === 'sheet' ? ' <span class="hint" title="นำเข้าจากระบบลงทะเบียนเดิม (Google Sheet)">ระบบเดิม</span>' : ''}</td>
           <td>${a.checkin_sig ? `<img class="sigimg" data-sig="${esc(a.checkin_sig)}" alt="ลายเซ็น">` : '–'}</td>
           ${fin ? `<td>${a.finish_at ? `${thTime(a.finish_at)} ${a.finish_sig ? `<img class="sigimg" data-sig="${esc(a.finish_sig)}" alt="ลายเซ็นจบ">` : ''}` : '–'}</td>` : ''}
