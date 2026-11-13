@@ -125,8 +125,8 @@ function reportPdfs_(d) {
   if (p.summary_pdf) out.push(Utilities.newBlob(summaryHtml_(d), 'text/html', 'r.html').getAs('application/pdf').setName(fname_('สรุปผู้เข้าอบรม ' + c.title) + '.pdf'));
   if (p.sheet && d.sheet) {
     loadSigs_(d.sheet.rows || []);
-    try { var lg = UrlFetchApp.fetch(String(d.site || 'https://plpnquiz.pages.dev/').replace(/[#?].*$/, '').replace(/\/?$/, '/') + 'logo-hospitals.png', { muteHttpExceptions: true });
-          if (lg.getResponseCode() === 200) d.logo = 'data:image/png;base64,' + Utilities.base64Encode(lg.getBlob().getBytes()); } catch (e) {}
+    try { var lg = d.logo_url === 'none' ? null : UrlFetchApp.fetch(d.logo_url || (String(d.site || 'https://plpnquiz.pages.dev/').replace(/[#?].*$/, '').replace(/\/?$/, '/') + 'logo-hospitals.png'), { muteHttpExceptions: true });
+          if (lg && lg.getResponseCode() === 200) d.logo = 'data:' + (lg.getHeaders()['Content-Type'] || 'image/png') + ';base64,' + Utilities.base64Encode(lg.getBlob().getBytes()); } catch (e) {}
     out.push(Utilities.newBlob(signSheetHtml_(d), 'text/html', 's.html').getAs('application/pdf').setName(fname_('ใบลงชื่อ ' + c.title + ' ' + (d.sheet.label || '')) + '.pdf'));
   }
   return out;

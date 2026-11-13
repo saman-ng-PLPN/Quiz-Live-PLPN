@@ -3476,3 +3476,70 @@ begin
 end $$;
 revoke execute on function public.send_course_report(uuid, jsonb, jsonb) from public, anon;
 grant execute on function public.send_course_report(uuid, jsonb, jsonb) to authenticated;
+
+-- =====================================================================
+-- 24) v14.9: โลโก้ของระบบ (ผู้ดูแลอัปโหลดเอง) — ใช้ทุกหน้า ใบลงชื่อ และ PDF
+-- =====================================================================
+alter table public.app_config add column if not exists logo_url text not null default '';
+
+insert into storage.buckets (id, name, public) values ('branding', 'branding', true) on conflict (id) do nothing;
+update storage.buckets set public = true, file_size_limit = 600000, allowed_mime_types = array['image/png', 'image/jpeg', 'image/webp']
+ where id = 'branding';
+drop policy if exists branding_admin_ins on storage.objects;
+create policy branding_admin_ins on storage.objects for insert to authenticated with check (bucket_id = 'branding' and public.is_admin());
+drop policy if exists branding_admin_upd on storage.objects;
+create policy branding_admin_upd on storage.objects for update to authenticated using (bucket_id = 'branding' and public.is_admin());
+drop policy if exists branding_admin_del on storage.objects;
+create policy branding_admin_del on storage.objects for delete to authenticated using (bucket_id = 'branding' and public.is_admin());
+
+-- อ่านได้ทุกคน (หน้าผู้เข้าร่วมไม่ต้องล็อกอิน) · '' = โลโก้ตั้งต้น · 'none' = ไม่แสดงโลโก้
+create or replace function public.app_branding() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('logo_url', logo_url) from app_config where id = 1
+$$;
+revoke execute on function public.app_branding() from public;
+grant execute on function public.app_branding() to anon, authenticated;
+
+create or replace function public.set_app_logo(p_url text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v text := trim(coalesce(p_url, ''));
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if v not in ('', 'none') and v !~ '^https://[a-z0-9]+\.supabase\.co/storage/v1/object/public/branding/[A-Za-z0-9._-]+(\?v=[0-9]+)?$' then
+    raise exception 'ลิงก์โลโก้ไม่ถูกต้อง';
+  end if;
+  update app_config set logo_url = v where id = 1;
+  return public.app_branding();
+end $$;
+revoke execute on function public.set_app_logo(text) from public, anon;
+grant execute on function public.set_app_logo(text) to authenticated;
+
+-- ส่งสรุป: แนบลิงก์โลโก้ให้ Apps Script ใช้ใน PDF
+create or replace function public.send_course_report(p_course uuid, p_to jsonb, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare c courses; v text[]; dom text := lower((select allowed_domain from app_config where id = 1)); me text := lower(coalesce(auth.jwt() ->> 'email', ''));
+        lg text := (select logo_url from app_config where id = 1);
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  select coalesce(array_agg(distinct e), '{}') into v
+    from (select lower(trim(x)) e from jsonb_array_elements_text(coalesce(p_to, '[]'::jsonb)) x) y where e <> '';
+  if coalesce(array_length(v, 1), 0) = 0 then raise exception 'เลือกผู้รับอย่างน้อย 1 คน'; end if;
+  if array_length(v, 1) > 20 then raise exception 'ส่งได้ไม่เกิน 20 คนต่อครั้ง'; end if;
+  if coalesce(dom, '') <> '' and exists (select 1 from unnest(v) e where e !~ ('^[^@\s]+@' || replace(dom, '.', '\.') || '$')) then
+    raise exception 'ส่งได้เฉพาะอีเมล @%', dom;
+  end if;
+  if length(p_payload::text) > 3000000 then raise exception 'ข้อมูลใหญ่เกินไป · เลือกส่งทีละวันหรือทีละรอบ'; end if;
+  if not public.mail_send(c.id, 'report', v,
+       '[Quiz Live PLPN] สรุปการเข้าอบรม · ' || c.title || coalesce(' · ' || nullif(p_payload #>> '{sheet,label}', ''), ''),
+       p_payload || jsonb_build_object('course', public.mail_course_info(c.id) || jsonb_build_object('cert_title', c.cert_title),
+                                       'logo_url', coalesce(lg, ''),
+                                       'reply_to', me, 'from_name', public.user_display_name(me) || ' (ผ่าน Quiz Live PLPN)', 'sender_name', public.user_display_name(me))) then
+    raise exception 'ยังไม่ได้ตั้งค่าการส่งอีเมล (ผู้ดูแลระบบตั้งได้ที่กล่อง ⚙ ผู้ดูแลระบบ)';
+  end if;
+  perform public.log_course(c.id, null, 'ส่งสรุปทางอีเมล', jsonb_build_object('name', array_to_string(v, ', '), 'round', p_payload #>> '{sheet,label}'));
+  return jsonb_build_object('ok', true, 'to', to_jsonb(v));
+end $$;
+revoke execute on function public.send_course_report(uuid, jsonb, jsonb) from public, anon;
+grant execute on function public.send_course_report(uuid, jsonb, jsonb) to authenticated;
