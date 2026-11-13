@@ -3250,7 +3250,7 @@ language sql stable as $$
 $$;
 
 -- ---------- เชิญผู้จัดร่วม ----------
--- ผ่านระบบกลาง (Apps Script) · ชื่อผู้ส่ง = ผู้เชิญ (ผ่าน Quiz Live) · ตอบกลับถึงผู้เชิญ
+-- ผ่านระบบกลาง (Apps Script) · ชื่อผู้ส่ง = ผู้เชิญ (ผ่าน Quiz Live PLPN) · ตอบกลับถึงผู้เชิญ
 create or replace function public.send_cohost_invite(p_course uuid, p_email text)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare c courses; e text := lower(trim(coalesce(p_email, ''))); me text := lower(coalesce(auth.jwt() ->> 'email', '')); ok boolean;
@@ -3259,9 +3259,9 @@ begin
   if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
   select * into c from courses where id = p_course;
   if not (e = any(coalesce(c.cohosts, '{}'))) then raise exception 'อีเมลนี้ไม่ได้อยู่ในรายชื่อผู้จัดร่วม'; end if;
-  ok := public.mail_send(c.id, 'invite', array[e], '[Quiz Live] คุณได้รับเชิญเป็นผู้จัดร่วม · ' || c.title,
+  ok := public.mail_send(c.id, 'invite', array[e], '[Quiz Live PLPN] คุณได้รับเชิญเป็นผู้จัดร่วม · ' || c.title,
           jsonb_build_object('course', public.mail_course_info(c.id), 'to_email', e, 'inviter_email', me, 'inviter_name', public.user_display_name(me),
-                             'reply_to', me, 'from_name', public.user_display_name(me) || ' (ผ่าน Quiz Live)'));
+                             'reply_to', me, 'from_name', public.user_display_name(me) || ' (ผ่าน Quiz Live PLPN)'));
   if not ok then raise exception 'ยังไม่ได้ตั้งค่าการส่งอีเมล (ผู้ดูแลระบบตั้งได้ที่กล่อง ⚙ ผู้ดูแลระบบ)'; end if;
   insert into cohost_invites (course_id, email, sent_at, sent_by, via) values (c.id, e, now(), me, 'system')
   on conflict (course_id, email) do update set sent_at = now(), sent_by = excluded.sent_by, via = excluded.via;
@@ -3316,9 +3316,9 @@ begin
   -- ส่งอีเมลไม่สำเร็จต้องไม่ทำให้การจองล้ม
   begin
   perform public.mail_send(c.id, 'event', v_to,
-    '[Quiz Live] ' || new.action || ' · ' || c.title || coalesce(' · ' || coalesce(new.detail ->> 'to', new.detail ->> 'from'), ''),
+    '[Quiz Live PLPN] ' || new.action || ' · ' || c.title || coalesce(' · ' || coalesce(new.detail ->> 'to', new.detail ->> 'from'), ''),
     jsonb_build_object('course', public.mail_course_info(c.id), 'event', jsonb_build_object('action', new.action, 'at', new.at, 'actor', new.actor, 'detail', new.detail),
-                       'reply_to', c.owner_email, 'from_name', public.user_display_name(c.owner_email) || ' (ผ่าน Quiz Live)'));
+                       'reply_to', c.owner_email, 'from_name', public.user_display_name(c.owner_email) || ' (ผ่าน Quiz Live PLPN)'));
   exception when others then raise warning 'mail: %', sqlerrm;
   end;
   return null;
@@ -3341,14 +3341,14 @@ begin
        and l.actor not like 'ระบบ%';
     if v_items is not null then
       perform public.mail_send(c.id, 'digest', public.course_recipients(c),
-        '[Quiz Live] สรุปวันนี้ · ' || c.title || ' · ' ||
+        '[Quiz Live PLPN] สรุปวันนี้ · ' || c.title || ' · ' ||
           concat_ws(' · ',
             nullif('จองใหม่ ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' = 'จอง'), 'จองใหม่ 0'),
             nullif('ย้าย ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' = 'ย้ายรอบ'), 'ย้าย 0'),
             nullif('ยกเลิก ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' = 'ยกเลิกจอง'), 'ยกเลิก 0'),
             nullif('อื่นๆ ' || (select count(*) from jsonb_array_elements(v_items) x where x ->> 'action' not in ('จอง', 'ย้ายรอบ', 'ยกเลิกจอง')), 'อื่นๆ 0')),
         jsonb_build_object('course', public.mail_course_info(c.id), 'items', v_items, 'since', c.notify_last,
-                           'reply_to', c.owner_email, 'from_name', public.user_display_name(c.owner_email) || ' (ผ่าน Quiz Live)'));
+                           'reply_to', c.owner_email, 'from_name', public.user_display_name(c.owner_email) || ' (ผ่าน Quiz Live PLPN)'));
       v_n := v_n + 1;
     end if;
     update courses set notify_last = v_now where id = c.id;
@@ -3384,7 +3384,7 @@ language plpgsql security definer set search_path = public as $$
 declare me text := lower(coalesce(auth.jwt() ->> 'email', ''));
 begin
   if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
-  if not public.mail_send(null, 'test', array[me], '[Quiz Live] ทดสอบการส่งอีเมล', jsonb_build_object('reply_to', me, 'from_name', 'Quiz Live')) then
+  if not public.mail_send(null, 'test', array[me], '[Quiz Live PLPN] ทดสอบการส่งอีเมล', jsonb_build_object('reply_to', me, 'from_name', 'Quiz Live PLPN')) then
     raise exception 'ยังไม่ได้ตั้งค่า URL และรหัสลับ';
   end if;
   return jsonb_build_object('ok', true, 'to', me);
@@ -3466,9 +3466,9 @@ begin
   end if;
   if length(p_payload::text) > 3000000 then raise exception 'ข้อมูลใหญ่เกินไป · เลือกส่งทีละวันหรือทีละรอบ'; end if;
   if not public.mail_send(c.id, 'report', v,
-       '[Quiz Live] สรุปการเข้าอบรม · ' || c.title || coalesce(' · ' || nullif(p_payload #>> '{sheet,label}', ''), ''),
+       '[Quiz Live PLPN] สรุปการเข้าอบรม · ' || c.title || coalesce(' · ' || nullif(p_payload #>> '{sheet,label}', ''), ''),
        p_payload || jsonb_build_object('course', public.mail_course_info(c.id) || jsonb_build_object('cert_title', c.cert_title),
-                                       'reply_to', me, 'from_name', public.user_display_name(me) || ' (ผ่าน Quiz Live)', 'sender_name', public.user_display_name(me))) then
+                                       'reply_to', me, 'from_name', public.user_display_name(me) || ' (ผ่าน Quiz Live PLPN)', 'sender_name', public.user_display_name(me))) then
     raise exception 'ยังไม่ได้ตั้งค่าการส่งอีเมล (ผู้ดูแลระบบตั้งได้ที่กล่อง ⚙ ผู้ดูแลระบบ)';
   end if;
   perform public.log_course(c.id, null, 'ส่งสรุปทางอีเมล', jsonb_build_object('name', array_to_string(v, ', '), 'round', p_payload #>> '{sheet,label}'));

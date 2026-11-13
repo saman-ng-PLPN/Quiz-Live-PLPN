@@ -5,6 +5,6 @@ window.QUIZ_CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_X_x-weAX8dcI32BepCZCog_BhMRLSI3',
   JOIN_URL: 'plpnquiz.pages.dev',      // ลิงก์สั้นที่แสดงบนจอใหญ่และใช้ทำ QR (เว้นว่างได้)
   ALLOWED_DOMAIN: 'princgroup.com',   // อีเมลโดเมนที่สร้าง/จัดเกมได้ (ต้องตรงกับ app_config ในฐานข้อมูล)
-  APP_NAME: 'Quiz Live',
+  APP_NAME: 'Quiz Live PLPN',
   ORG_NAME: 'โรงพยาบาล'
 };
