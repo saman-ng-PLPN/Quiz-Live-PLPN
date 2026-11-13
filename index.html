@@ -601,6 +601,18 @@ body.admin .dhero .btn.light{background:rgba(255,255,255,.14);color:#fff;border-
 details.dl{border:1px solid #e3eef8;box-shadow:none}
 details.dl[open] summary{color:var(--navy2)}
 .dk .b{background:#e6f3fd;border-color:#c5e3f8;color:#0f5592}
+
+/* หน้าเข้าสู่ระบบผู้จัด: แบนเนอร์เดียวกับแถบด้านบน */
+.lgin{min-height:100vh;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px 16px}
+.lgban{width:100%;max-width:520px;box-sizing:border-box;background:linear-gradient(100deg,#0a4f8c 0%,#185d9b 55%,#2b86c9 100%);color:#fff;border-radius:22px;padding:26px 24px 22px;
+  box-shadow:0 4px 0 var(--gold),0 14px 34px rgba(10,83,147,.25);text-align:center}
+.lgtop{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}
+.lgtop .brand{font-size:36px;font-weight:800}.lgtop .hlogo img{height:34px}
+.lgtag{margin:14px 0 0;font-size:16px;color:#e4f2fd;line-height:1.5}.lgtag small{font-size:13.5px;color:#cfe8fb}
+.lgcard{width:100%;max-width:440px;box-sizing:border-box;background:#fff;border-radius:18px;padding:20px;display:grid;gap:10px;border:1px solid #e3eef8;box-shadow:0 6px 20px rgba(15,85,146,.10)}
+.lgcard .btn{width:100%}
+.lgback{color:var(--navy2);font-size:14px}
+@media (max-width:480px){.lgtop .brand{font-size:28px}.lgtop .hlogo img{height:28px}}
 </style>
 </head>
 <body>
@@ -701,23 +713,21 @@ async function requireStaff() {
   if (dom && !email.endsWith('@' + dom)) { renderWrongAccount(email); return null; }
   return session.user;
 }
+function loginShell(inner) {
+  setBody('admin');
+  return `<main class="lgin"><section class="lgban"><div class="lgtop"><span class="brand">${brandHTML()}</span>${logoHTML()}</div>
+      <p class="lgtag">ระบบงานอบรม · จอง · ลงชื่อ · แบบทดสอบ · เกม<br><small>สำหรับผู้จัด: สร้างงานอบรม ชุดคำถาม และเปิดห้องเกม</small></p></section>
+    <div class="lgcard">${inner}</div>
+    <a class="lgback" href="./">← กลับหน้าเข้าร่วมเกม</a></main>`;
+}
 function renderLogin() {
-  setBody('player');
-  app.innerHTML = `<main class="join">
-    <div class="brand">${brandHTML()}</div>
-    <p class="tag">สำหรับผู้จัด: สร้างชุดคำถามและเปิดห้องเกม</p>
-    <div class="jcard">
-      <button class="btn" id="gbtn">เข้าสู่ระบบด้วย Google</button>
-      <p class="hint" style="text-align:center">ใช้อีเมล @${esc(CFG.ALLOWED_DOMAIN || '')} เท่านั้น</p>
-    </div>
-    <a class="host-link" href="./">← กลับหน้าเข้าร่วมเกม</a></main>`;
+  app.innerHTML = loginShell(`<button class="btn sun lg" id="gbtn">เข้าสู่ระบบด้วย Google</button>
+      <p class="hint" style="text-align:center;margin:0">ใช้อีเมล @${esc(CFG.ALLOWED_DOMAIN || '')} เท่านั้น</p>`);
   $('#gbtn').onclick = login;
 }
 function renderWrongAccount(email) {
-  setBody('player');
-  app.innerHTML = `<main class="join"><div class="brand">${brandHTML()}</div>
-    <div class="jcard"><p style="margin:0;text-align:center">บัญชี <b>${esc(email)}</b><br>ไม่ใช่อีเมล @${esc(CFG.ALLOWED_DOMAIN)}</p>
-    <button class="btn" id="out">ออกจากระบบ แล้วเข้าใหม่</button></div></main>`;
+  app.innerHTML = loginShell(`<p style="margin:0;text-align:center">บัญชี <b>${esc(email)}</b><br>ไม่ใช่อีเมล @${esc(CFG.ALLOWED_DOMAIN)}</p>
+    <button class="btn sun lg" id="out">ออกจากระบบ แล้วเข้าใหม่</button>`);
   $('#out').onclick = async () => { await sb.auth.signOut(); login(); };
 }
 async function login() {
