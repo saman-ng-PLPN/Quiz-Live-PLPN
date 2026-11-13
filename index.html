@@ -621,6 +621,20 @@ body.admin #tbody > .tblwrap, body.admin #tbody > .tiles4{background:#fff;border
 body.admin .stile{border-color:#d9e9f7;background:linear-gradient(180deg,#fff,#f3f9fe)}
 body.admin .stile:nth-child(3n+1){background:#e6f3fd;border-color:#c5e3f8}body.admin .stile:nth-child(3n+2){background:#e9f8ef;border-color:#cdeedb}body.admin .stile:nth-child(3n){background:#fff7e3;border-color:#f5e3b5}
 body.admin .stile strong{color:var(--navy2)}
+
+/* QR เต็มจอแบบสุ่ม */
+.qscreen{position:fixed;inset:0;z-index:50;background:#0a4f8c}
+.qpaint{position:absolute;inset:0;overflow:hidden;font-family:inherit}
+.qpaint .bgdeco{position:absolute;inset:0;width:100%;height:100%}
+.qpaint .col{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.8vh;padding:3vh 4vw;text-align:center}.qpaint .col.sd{padding-left:8vw}
+.qpaint .lg{background:#fff;border-radius:12px;padding:6px 12px;box-shadow:0 4px 14px rgba(0,0,0,.12)}.qpaint .lg img{height:clamp(28px,5.5vh,56px);display:block}
+.qpaint .tag{font-weight:600;font-size:clamp(14px,2vh,22px);padding:4px 16px;border-radius:99px}
+.qpaint h1{margin:0;font-size:clamp(22px,4.2vh,52px);line-height:1.25;max-width:92vw;text-wrap:balance}
+.qpaint .qr{background:#fff;border-radius:18px;padding:clamp(10px,2vh,22px);box-shadow:0 8px 24px rgba(0,0,0,.18)}.qpaint .qr img{width:min(50vh,78vw);height:min(50vh,78vw);display:block;image-rendering:pixelated}
+.qpaint .url{font-size:clamp(16px,2.6vh,34px);font-weight:700}.qpaint .ft{font-size:clamp(12px,1.6vh,18px)}
+.qpaint .band{position:absolute;left:0;right:0;top:0;height:7vh}.qpaint .side{position:absolute;left:0;top:0;bottom:0;width:5vw}.qpaint .frame{position:absolute;inset:2vh;border:8px solid;border-radius:20px}
+.qbtns{position:absolute;top:12px;right:12px;display:flex;gap:8px;z-index:2}
+@media (max-width:640px){.qpaint .col{padding-top:64px}.qpaint .col.sd{padding-left:9vw}}
 </style>
 </head>
 <body>
@@ -4920,98 +4934,102 @@ const Report = {
   }
 };
 
+// ---------- v15.2 QR เต็มจอ + โปสเตอร์ A4 · สุ่มแบบ (สี/โครง/ลาย) ไม่ซ้ำ · คงโลโก้ หัวข้อ QR ลิงก์ ----------
+// qrDesign: สุ่มแบบใหม่ (หรือใช้แบบเดิมที่ส่งมา) แล้ววาดลงกล่อง el · ใช้ทั้งหน้าจอนี้และหน้าต่างพิมพ์ (ส่งต่อเป็นข้อความโค้ด)
+function qrDesign(el, o, keep) {
+  var P = [
+    { bg: ['#0a4f8c', '#185d9b', '#2b86c9'], ink: '#fff', sub: '#cfe8fb', acc: '#f7bb1a', deco: ['#63bff5', '#f7bb1a', '#ffffff'] },
+    { bg: ['#e8f5fe', '#d4ecfd', '#ffffff'], ink: '#0f4f86', sub: '#3b6f9e', acc: '#f7bb1a', deco: ['#63bff5', '#185d9b', '#f7bb1a'] },
+    { bg: ['#f7bb1a', '#ffd25a', '#fff1c2'], ink: '#0a3a66', sub: '#5b4a10', acc: '#185d9b', deco: ['#ffffff', '#185d9b', '#63bff5'] },
+    { bg: ['#0b2f55', '#0f4f86', '#185d9b'], ink: '#fff', sub: '#bfe0f8', acc: '#63bff5', deco: ['#f7bb1a', '#63bff5', '#ffffff'] },
+    { bg: ['#ffffff', '#f3f9fe', '#e6f3fd'], ink: '#10263f', sub: '#4a6178', acc: '#185d9b', deco: ['#f7bb1a', '#63bff5', '#185d9b'] },
+    { bg: ['#63bff5', '#3aa6e8', '#185d9b'], ink: '#fff', sub: '#e6f5fe', acc: '#f7bb1a', deco: ['#ffffff', '#f7bb1a', '#0f4f86'] }
+  ];
+  var LAY = ['center', 'band', 'side', 'frame'], DECO = ['bubbles', 'plus', 'waves', 'dots', 'stripes', 'rings'];
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function pick(n, avoid) { var i, k = 0; do { i = Math.floor(Math.random() * n); k++; } while (i === avoid && k < 20); return i; }
+  function esc(x) { return String(x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function deco(kind, c) {
+    var s = '', i, x, y, z;
+    if (kind === 'bubbles') for (i = 0; i < 14; i++) s += '<circle cx="' + rnd(0, 210).toFixed(1) + '" cy="' + rnd(0, 297).toFixed(1) + '" r="' + rnd(6, 38).toFixed(1) + '" fill="' + c[i % 3] + '" opacity="' + rnd(.08, .28).toFixed(2) + '"/>';
+    if (kind === 'plus') for (i = 0; i < 10; i++) { x = rnd(0, 200); y = rnd(0, 290); z = rnd(8, 26);
+      s += '<g fill="' + c[i % 3] + '" opacity="' + rnd(.1, .3).toFixed(2) + '" transform="rotate(' + rnd(-15, 15).toFixed(1) + ' ' + x.toFixed(1) + ' ' + y.toFixed(1) + ')"><rect x="' + (x - z / 6).toFixed(1) + '" y="' + (y - z / 2).toFixed(1) + '" width="' + (z / 3).toFixed(1) + '" height="' + z.toFixed(1) + '" rx="' + (z / 8).toFixed(1) + '"/><rect x="' + (x - z / 2).toFixed(1) + '" y="' + (y - z / 6).toFixed(1) + '" width="' + z.toFixed(1) + '" height="' + (z / 3).toFixed(1) + '" rx="' + (z / 8).toFixed(1) + '"/></g>'; }
+    if (kind === 'waves') for (i = 0; i < 4; i++) { y = rnd(200, 290); z = rnd(6, 16);
+      s += '<path d="M0 ' + y.toFixed(1) + ' Q 52 ' + (y - z).toFixed(1) + ' 105 ' + y.toFixed(1) + ' T 210 ' + y.toFixed(1) + ' V 297 H 0 Z" fill="' + c[i % 3] + '" opacity="' + (0.12 + i * 0.05).toFixed(2) + '"/>'; }
+    if (kind === 'dots') { var g = rnd(9, 14), col = c[Math.floor(rnd(0, 3))]; for (y = 4; y < 297; y += g) for (x = 4; x < 210; x += g) s += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="0.9" fill="' + col + '" opacity=".35"/>'; }
+    if (kind === 'stripes') { var ang = rnd(20, 60).toFixed(0); for (i = -300; i < 520; i += rnd(14, 26)) s += '<rect x="' + i.toFixed(1) + '" y="-200" width="' + rnd(3, 9).toFixed(1) + '" height="700" fill="' + c[Math.floor(rnd(0, 3))] + '" opacity="' + rnd(.08, .2).toFixed(2) + '" transform="rotate(' + ang + ' 105 148)"/>'; }
+    if (kind === 'rings') for (i = 0; i < 7; i++) s += '<circle cx="' + rnd(-20, 230).toFixed(1) + '" cy="' + rnd(-20, 320).toFixed(1) + '" r="' + rnd(20, 70).toFixed(1) + '" fill="none" stroke="' + c[i % 3] + '" stroke-width="' + rnd(1.5, 5).toFixed(1) + '" opacity="' + rnd(.12, .3).toFixed(2) + '"/>';
+    return '<svg class="bgdeco" viewBox="0 0 210 297" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' + s + '</svg>';
+  }
+  var d = keep;
+  if (!d) {
+    var last = {}; try { last = JSON.parse(sessionStorage.getItem('qrposter.last') || '{}'); } catch (e) {}
+    var pi = pick(P.length, last.p), li = pick(LAY.length, last.l), di = pick(DECO.length, last.d);
+    try { sessionStorage.setItem('qrposter.last', JSON.stringify({ p: pi, l: li, d: di })); } catch (e) {}
+    d = { p: pi, l: li, d: di, ang: Math.floor(rnd(100, 200)), svg: deco(DECO[di], P[pi].deco) };
+  }
+  var p = P[d.p], lay = LAY[d.l];
+  var tagInk = (p.acc === '#f7bb1a' || p.acc === '#63bff5') ? '#0a3a66' : '#fff';
+  var inner = (o.logo ? '<div class="lg"><img src="' + o.logo + '" alt=""></div>' : '') +
+    '<div class="tag" style="background:' + p.acc + ';color:' + tagInk + '">สแกน QR Code</div>' +
+    '<h1 style="color:' + p.ink + '">' + esc(o.title) + '</h1>' +
+    '<div class="qr">' + (o.qr ? '<img src="' + o.qr + '" alt="QR Code">' : '') + '</div>' +
+    '<div class="url" style="color:' + p.ink + '">' + esc(o.short) + '</div>' +
+    '<div class="ft" style="color:' + p.sub + '">' + (o.foot || 'Quiz Live PLPN · ใช้กล้องมือถือสแกนได้ทันที') + '</div>';
+  var ex = lay === 'band' ? '<div class="band" style="background:' + p.acc + '"></div>' : lay === 'side' ? '<div class="side" style="background:' + p.acc + '"></div>'
+    : lay === 'frame' ? '<div class="frame" style="border-color:' + p.acc + '"></div>' : '';
+  el.style.background = 'linear-gradient(' + d.ang + 'deg,' + p.bg[0] + ' 0%,' + p.bg[1] + ' 55%,' + p.bg[2] + ' 100%)';
+  el.innerHTML = d.svg + ex + '<div class="col' + (lay === 'side' ? ' sd' : '') + '">' + inner + '</div>';
+  el.dataset.info = 'สี ' + (d.p + 1) + ' · โครง ' + lay + ' · ลาย ' + DECO[d.d];
+  return d;
+}
+function qrImage(link, size) {
+  const box = document.createElement('div'); box.style.cssText = 'position:fixed;left:-9999px;top:0';
+  document.body.appendChild(box);
+  try { new QRCode(box, { text: link, width: size, height: size, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
+  const cv = box.querySelector('canvas'), im = box.querySelector('img');
+  const url = cv ? cv.toDataURL('image/png') : im ? im.src : '';
+  box.remove(); return url;
+}
 function showBigQR(title, link) {
-  const el = document.createElement('div'); el.className = 'qroverlay';
-  el.innerHTML = `<h1>${esc(title)}</h1><div class="qrbox" id="bq"></div>
-    <div class="url">${esc(link.replace(/^https?:\/\//, ''))}</div><div class="code">แตะที่ใดก็ได้เพื่อปิด</div>
-    <button class="btn sun" id="bq-print" style="position:absolute;top:16px;right:16px">🖨 พิมพ์โปสเตอร์ A4</button>`;
+  const o = { title, short: link.replace(/^https?:\/\//, ''), logo: logoAbs(), qr: qrImage(link, 900), foot: 'แตะที่ว่างเพื่อปิด' };
+  const el = document.createElement('div'); el.className = 'qscreen';
+  el.innerHTML = `<div class="qpaint" id="qpaint"></div><div class="qbtns"><button class="btn light sm" id="qs-roll">🔀 สุ่มแบบใหม่</button><button class="btn sun sm" id="qs-print">🖨 พิมพ์ A4</button></div>`;
   document.body.appendChild(el);
-  try { new QRCode($('#bq'), { text: link, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
-  $('#bq-print').onclick = e => { e.stopPropagation(); QRPoster.open(title, link); };
-  el.onclick = () => { el.remove(); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} };
+  let d = qrDesign($('#qpaint'), o);
+  $('#qs-roll').onclick = e => { e.stopPropagation(); d = qrDesign($('#qpaint'), o); };
+  $('#qs-print').onclick = e => { e.stopPropagation(); QRPoster.open({ ...o, foot: '' }, d); };
+  el.onclick = e => { if (e.target.closest('.qr,.qbtns')) return; el.remove(); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (er) {} };
   try { el.requestFullscreen && el.requestFullscreen().catch(() => {}); } catch (e) {}
   onLeave(() => el.remove());
 }
-
-// ---------- v15.2 โปสเตอร์ QR ขนาด A4 · สุ่มแบบไม่ซ้ำ (คงหัวข้อและ QR ไว้) ----------
 const QRPoster = {
-  qrData(link) {
-    const box = document.createElement('div'); box.style.cssText = 'position:fixed;left:-9999px;top:0';
-    document.body.appendChild(box);
-    try { new QRCode(box, { text: link, width: 900, height: 900, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
-    const cv = box.querySelector('canvas'), im = box.querySelector('img');
-    const url = cv ? cv.toDataURL('image/png') : im ? im.src : '';
-    box.remove(); return url;
-  },
-  open(title, link) {
-    const qr = this.qrData(link), logo = logoAbs(), w = window.open('', '_blank');
+  // หน้าต่างพิมพ์ A4: เริ่มด้วยแบบเดียวกับที่เห็นบนจอ · สุ่มใหม่ได้
+  open(o, keep) {
+    const w = window.open('', '_blank');
     if (!w) return toast('เบราว์เซอร์บล็อกหน้าต่างใหม่ · อนุญาตป๊อปอัปแล้วลองอีกครั้ง', true);
-    const short = link.replace(/^https?:\/\//, '');
-    // สร้างฉากหลังแบบสุ่ม (สี โครงหลัก ลวดลาย) ทุกครั้งที่กดสุ่ม · หัวข้อ QR และลิงก์คงเดิม
-    const gen = `(${String(function (TITLE, QR, LOGO, SHORT) {
-      var P = [
-        { bg: ['#0a4f8c', '#185d9b', '#2b86c9'], ink: '#fff', sub: '#cfe8fb', acc: '#f7bb1a', deco: ['#63bff5', '#f7bb1a', '#ffffff'] },
-        { bg: ['#e8f5fe', '#d4ecfd', '#ffffff'], ink: '#0f4f86', sub: '#3b6f9e', acc: '#f7bb1a', deco: ['#63bff5', '#185d9b', '#f7bb1a'] },
-        { bg: ['#f7bb1a', '#ffd25a', '#fff1c2'], ink: '#0a3a66', sub: '#5b4a10', acc: '#185d9b', deco: ['#ffffff', '#185d9b', '#63bff5'] },
-        { bg: ['#0b2f55', '#0f4f86', '#185d9b'], ink: '#fff', sub: '#bfe0f8', acc: '#63bff5', deco: ['#f7bb1a', '#63bff5', '#ffffff'] },
-        { bg: ['#ffffff', '#f3f9fe', '#e6f3fd'], ink: '#10263f', sub: '#4a6178', acc: '#185d9b', deco: ['#f7bb1a', '#63bff5', '#185d9b'] },
-        { bg: ['#63bff5', '#3aa6e8', '#185d9b'], ink: '#fff', sub: '#e6f5fe', acc: '#f7bb1a', deco: ['#ffffff', '#f7bb1a', '#0f4f86'] }
-      ];
-      var LAY = ['center', 'band', 'side', 'frame'];
-      var DECO = ['bubbles', 'plus', 'waves', 'dots', 'stripes', 'rings'];
-      var last = {}; try { last = JSON.parse(sessionStorage.getItem('qrposter.last') || '{}'); } catch (e) {}
-      function pick(n, avoid) { var i, k = 0; do { i = Math.floor(Math.random() * n); k++; } while (i === avoid && k < 20); return i; }
-      function rnd(a, b) { return a + Math.random() * (b - a); }
-      function esc(x) { return String(x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-      function deco(kind, c) {
-        var s = '', i;
-        if (kind === 'bubbles') for (i = 0; i < 14; i++) s += '<circle cx="' + rnd(0, 210) + '" cy="' + rnd(0, 297) + '" r="' + rnd(6, 38) + '" fill="' + c[i % 3] + '" opacity="' + rnd(.08, .28).toFixed(2) + '"/>';
-        if (kind === 'plus') for (i = 0; i < 10; i++) { var x = rnd(0, 200), y = rnd(0, 290), z = rnd(8, 26), o = rnd(.1, .3).toFixed(2);
-          s += '<g fill="' + c[i % 3] + '" opacity="' + o + '" transform="rotate(' + rnd(-15, 15).toFixed(1) + ' ' + x + ' ' + y + ')"><rect x="' + (x - z / 6) + '" y="' + (y - z / 2) + '" width="' + z / 3 + '" height="' + z + '" rx="' + z / 8 + '"/><rect x="' + (x - z / 2) + '" y="' + (y - z / 6) + '" width="' + z + '" height="' + z / 3 + '" rx="' + z / 8 + '"/></g>'; }
-        if (kind === 'waves') for (i = 0; i < 4; i++) { var y0 = rnd(200, 290), a = rnd(6, 16);
-          s += '<path d="M0 ' + y0 + ' Q 52 ' + (y0 - a) + ' 105 ' + y0 + ' T 210 ' + y0 + ' V 297 H 0 Z" fill="' + c[i % 3] + '" opacity="' + (0.12 + i * 0.05).toFixed(2) + '"/>'; }
-        if (kind === 'dots') { var g = rnd(9, 14), col = c[Math.floor(rnd(0, 3))]; for (var yy = 4; yy < 297; yy += g) for (var xx = 4; xx < 210; xx += g) s += '<circle cx="' + xx + '" cy="' + yy + '" r="0.9" fill="' + col + '" opacity=".35"/>'; }
-        if (kind === 'stripes') { var ang = rnd(20, 60).toFixed(0); for (i = -300; i < 520; i += rnd(14, 26)) s += '<rect x="' + i + '" y="-200" width="' + rnd(3, 9) + '" height="700" fill="' + c[Math.floor(rnd(0, 3))] + '" opacity="' + rnd(.08, .2).toFixed(2) + '" transform="rotate(' + ang + ' 105 148)"/>'; }
-        if (kind === 'rings') for (i = 0; i < 7; i++) s += '<circle cx="' + rnd(-20, 230) + '" cy="' + rnd(-20, 320) + '" r="' + rnd(20, 70) + '" fill="none" stroke="' + c[i % 3] + '" stroke-width="' + rnd(1.5, 5) + '" opacity="' + rnd(.12, .3).toFixed(2) + '"/>';
-        return '<svg class="bgdeco" viewBox="0 0 210 297" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">' + s + '</svg>';
-      }
-      var pi = pick(P.length, last.p), li = pick(LAY.length, last.l), di = pick(DECO.length, last.d);
-      try { sessionStorage.setItem('qrposter.last', JSON.stringify({ p: pi, l: li, d: di })); } catch (e) {}
-      var p = P[pi], lay = LAY[li], ang = Math.floor(rnd(100, 200));
-      var bg = 'linear-gradient(' + ang + 'deg,' + p.bg[0] + ' 0%,' + p.bg[1] + ' 55%,' + p.bg[2] + ' 100%)';
-      var head = '<div class="tag" style="background:' + p.acc + ';color:' + (p.acc === '#f7bb1a' || p.acc === '#63bff5' ? '#0a3a66' : '#fff') + '">สแกน QR Code</div>' +
-        '<h1 style="color:' + p.ink + '">' + esc(TITLE) + '</h1>';
-      var qr = '<div class="qr"><img src="' + QR + '" alt="QR"></div><div class="url" style="color:' + p.ink + '">' + esc(SHORT) + '</div>';
-      var logo = LOGO ? '<div class="lg"><img src="' + LOGO + '" alt=""></div>' : '';
-      var foot = '<div class="ft" style="color:' + p.sub + '">Quiz Live PLPN · ใช้กล้องมือถือสแกนได้ทันที</div>';
-      var body = '';
-      if (lay === 'center') body = '<div class="col">' + logo + head + qr + foot + '</div>';
-      if (lay === 'band') body = '<div class="band" style="background:' + p.acc + '"></div><div class="col">' + logo + head + qr + foot + '</div>';
-      if (lay === 'side') body = '<div class="side" style="background:' + p.acc + '"></div><div class="col" style="padding-left:30mm">' + logo + head + qr + foot + '</div>';
-      if (lay === 'frame') body = '<div class="frame" style="border-color:' + p.acc + '"></div><div class="col">' + logo + head + qr + foot + '</div>';
-      document.getElementById('poster').style.background = bg;
-      document.getElementById('poster').innerHTML = deco(DECO[di], p.deco) + body;
-      document.getElementById('info').textContent = 'แบบที่สุ่มได้: สี ' + (pi + 1) + ' · โครง ' + lay + ' · ลาย ' + DECO[di];
-    })})(${JSON.stringify(title)}, ${JSON.stringify(qr)}, ${JSON.stringify(logo)}, ${JSON.stringify(short)})`;
-    w.document.write(`<!doctype html><html lang="th"><head><meta charset="utf-8"><title>โปสเตอร์ QR · ${esc(title)}</title>
+    const O = JSON.stringify({ ...o, foot: 'Quiz Live PLPN · ใช้กล้องมือถือสแกนได้ทันที' }).replace(/</g, '\\u003c');
+    w.document.write(`<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>โปสเตอร์ QR · ${esc(o.title)}</title>
       <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;700&display=swap" rel="stylesheet"><style>
       @page{size:A4 portrait;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body{margin:0;background:#cbd5e1;font-family:'Kanit',sans-serif}
       #poster{width:210mm;height:297mm;margin:12px auto;position:relative;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.25)}
       .bgdeco{position:absolute;inset:0;width:100%;height:100%}
-      .col{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7mm;padding:16mm 14mm;text-align:center}
+      .col{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7mm;padding:16mm 14mm;text-align:center}.col.sd{padding-left:30mm}
       .lg{background:#fff;border-radius:5mm;padding:3mm 5mm;box-shadow:0 2mm 6mm rgba(0,0,0,.12)}.lg img{height:16mm;display:block}
       .tag{font-weight:600;font-size:15pt;padding:1.5mm 6mm;border-radius:99px}
       h1{margin:0;font-size:30pt;line-height:1.25;font-weight:700;max-width:180mm;text-wrap:balance}
       .qr{background:#fff;border-radius:7mm;padding:8mm;box-shadow:0 3mm 10mm rgba(0,0,0,.18)}.qr img{width:118mm;height:118mm;display:block;image-rendering:pixelated}
       .url{font-size:15pt;font-weight:600;letter-spacing:.3px}.ft{font-size:11pt}
-      .band{position:absolute;left:0;right:0;top:0;height:24mm}.side{position:absolute;left:0;top:0;bottom:0;width:18mm}
-      .frame{position:absolute;inset:8mm;border:3mm solid;border-radius:8mm}
-      .bar{position:sticky;top:0;z-index:5;background:#185d9b;color:#fff;padding:8px 12px;display:flex;gap:10px;align-items:center;font-family:sans-serif;flex-wrap:wrap}
-      .bar button{font:inherit;padding:7px 14px;border-radius:8px;border:0;cursor:pointer;font-weight:600}.bar .r{background:#fff;color:#185d9b}.bar .p{background:#f7bb1a;color:#0a3a66}
-      @media print{.bar{display:none}body{background:none}#poster{margin:0;box-shadow:none}}</style></head>
-      <body><div class="bar"><span style="flex:1" id="info"></span><button class="r" onclick="roll()">🔀 สุ่มแบบใหม่</button><button class="p" onclick="print()">🖨 พิมพ์ / บันทึก PDF</button></div>
-      <div id="poster"></div><script>function roll(){${gen}}roll();<\/script></body></html>`);
+      .band{position:absolute;left:0;right:0;top:0;height:24mm}.side{position:absolute;left:0;top:0;bottom:0;width:18mm}.frame{position:absolute;inset:8mm;border:3mm solid;border-radius:8mm}
+      .bar{position:sticky;top:0;z-index:5;background:#185d9b;color:#fff;padding:8px 12px;display:flex;gap:8px;align-items:center;font-family:sans-serif;flex-wrap:wrap}
+      .bar span{flex:1;min-width:160px;font-size:13px}.bar button{font:inherit;padding:7px 14px;border-radius:8px;border:0;cursor:pointer;font-weight:600}.bar .r{background:#fff;color:#185d9b}.bar .p{background:#f7bb1a;color:#0a3a66}
+      @media print{.bar{display:none}body{background:none}#poster{margin:0;box-shadow:none;zoom:1!important}}</style></head>
+      <body><div class="bar"><span id="info"></span><button class="r" onclick="roll()">🔀 สุ่มแบบใหม่</button><button class="p" onclick="print()">🖨 พิมพ์ / บันทึก PDF</button></div>
+      <div id="poster"></div><script>var qrDesign=${qrDesign.toString()};var O=${O};var P=document.getElementById('poster');
+      function show(k){qrDesign(P,O,k);document.getElementById('info').textContent='แบบ: '+P.dataset.info+' · A4 แนวตั้ง';}
+      function roll(){show(null)}show(${JSON.stringify(keep || null)});
+      function fit(){var w=P.offsetWidth||794,v=Math.min(innerWidth,document.documentElement.clientWidth||innerWidth,screen.width||innerWidth);P.style.zoom=v<w+24?((v-16)/w).toFixed(3):1}fit();addEventListener('resize',fit);<\/script></body></html>`);
     w.document.close();
   }
 };
