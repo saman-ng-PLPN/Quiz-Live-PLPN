@@ -3422,3 +3422,57 @@ end $$;
 create extension if not exists pg_cron;
 select cron.unschedule(jobid) from cron.job where jobname = 'quizlive-mail-digest';
 select cron.schedule('quizlive-mail-digest', '0 10 * * *', 'select public.mail_digest_run()');
+
+-- =====================================================================
+-- 23) v14.7: ปุ่ม "ส่งสรุป" (ผู้จัดกดเอง) — สรุปการเข้าอบรมทั้งงาน + ใบลงชื่อพร้อมลายเซ็น (PDF แนบ)
+--     · แจ้งเตือนอัตโนมัติ ปิดไว้ก่อน (ค่าเริ่มต้นของงานใหม่ = ปิด)
+-- =====================================================================
+alter table public.courses alter column notify set default 'off';
+update public.courses set notify = 'off' where notify <> 'off';
+
+-- ส่งงาน (ต่อเวลารอได้นานขึ้นสำหรับรายงานที่มีลายเซ็น)
+create or replace function public.mail_send(p_course uuid, p_kind text, p_to text[], p_subject text, p_payload jsonb)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare m mail_config; v_req bigint;
+begin
+  select * into m from mail_config where id = 1;
+  if coalesce(m.webhook_url, '') !~ '^https://script\.google\.com/' or coalesce(m.token, '') = '' then return false; end if;
+  if coalesce(array_length(p_to, 1), 0) = 0 then return false; end if;
+  select net.http_post(url := m.webhook_url,
+           body := p_payload || jsonb_build_object('token', m.token, 'kind', p_kind, 'to', to_jsonb(p_to), 'subject', p_subject, 'site', m.site_url),
+           headers := '{"Content-Type":"application/json"}'::jsonb,
+           timeout_milliseconds := case when p_kind = 'report' then 300000 else 10000 end)
+    into v_req;
+  insert into mail_log (course_id, kind, to_emails, subject, request_id, by_email)
+  values (p_course, p_kind, p_to, left(p_subject, 300), v_req, coalesce(auth.jwt() ->> 'email', 'ระบบ'));
+  return true;
+end $$;
+revoke execute on function public.mail_send(uuid, text, text[], text, jsonb) from public, anon, authenticated;
+
+-- ผู้จัดกดส่งสรุป: ส่วนหน้าเตรียมตัวเลข/รายชื่อ (ข้อมูลที่ผู้จัดเห็นได้อยู่แล้ว) · ส่งได้เฉพาะอีเมลบริษัท ไม่เกิน 20 คน
+create or replace function public.send_course_report(p_course uuid, p_to jsonb, p_payload jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare c courses; v text[]; dom text := lower((select allowed_domain from app_config where id = 1)); me text := lower(coalesce(auth.jwt() ->> 'email', ''));
+begin
+  if not public.is_staff() then raise exception 'ต้องเข้าสู่ระบบด้วยอีเมลบริษัท'; end if;
+  if not public.can_manage_course(p_course) then raise exception 'ไม่มีสิทธิ์จัดการงานนี้'; end if;
+  select * into c from courses where id = p_course;
+  select coalesce(array_agg(distinct e), '{}') into v
+    from (select lower(trim(x)) e from jsonb_array_elements_text(coalesce(p_to, '[]'::jsonb)) x) y where e <> '';
+  if coalesce(array_length(v, 1), 0) = 0 then raise exception 'เลือกผู้รับอย่างน้อย 1 คน'; end if;
+  if array_length(v, 1) > 20 then raise exception 'ส่งได้ไม่เกิน 20 คนต่อครั้ง'; end if;
+  if coalesce(dom, '') <> '' and exists (select 1 from unnest(v) e where e !~ ('^[^@\s]+@' || replace(dom, '.', '\.') || '$')) then
+    raise exception 'ส่งได้เฉพาะอีเมล @%', dom;
+  end if;
+  if length(p_payload::text) > 3000000 then raise exception 'ข้อมูลใหญ่เกินไป · เลือกส่งทีละวันหรือทีละรอบ'; end if;
+  if not public.mail_send(c.id, 'report', v,
+       '[Quiz Live] สรุปการเข้าอบรม · ' || c.title || coalesce(' · ' || nullif(p_payload #>> '{sheet,label}', ''), ''),
+       p_payload || jsonb_build_object('course', public.mail_course_info(c.id) || jsonb_build_object('cert_title', c.cert_title),
+                                       'reply_to', me, 'from_name', public.user_display_name(me) || ' (ผ่าน Quiz Live)', 'sender_name', public.user_display_name(me))) then
+    raise exception 'ยังไม่ได้ตั้งค่าการส่งอีเมล (ผู้ดูแลระบบตั้งได้ที่กล่อง ⚙ ผู้ดูแลระบบ)';
+  end if;
+  perform public.log_course(c.id, null, 'ส่งสรุปทางอีเมล', jsonb_build_object('name', array_to_string(v, ', '), 'round', p_payload #>> '{sheet,label}'));
+  return jsonb_build_object('ok', true, 'to', to_jsonb(v));
+end $$;
+revoke execute on function public.send_course_report(uuid, jsonb, jsonb) from public, anon;
+grant execute on function public.send_course_report(uuid, jsonb, jsonb) to authenticated;

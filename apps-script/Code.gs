@@ -3,7 +3,7 @@
  *
  * ติดตั้งครั้งเดียว:
  *  1) เปิด https://script.new ด้วยบัญชีบริษัทที่จะใช้ส่ง → วางโค้ดทั้งไฟล์นี้แทนของเดิม → บันทึก (ตั้งชื่อ "Quiz Live Mailer")
- *  2) เลือกฟังก์ชัน setup แล้วกด "เรียกใช้" → อนุญาตสิทธิ์ → ดู "บันทึกการดำเนินการ" จะเห็นรหัสลับ (TOKEN)
+ *  2) เลือกฟังก์ชัน setup แล้วกด "เรียกใช้" → อนุญาตสิทธิ์ (อีเมล · Drive · เชื่อมต่อภายนอก) → ดู "บันทึกการดำเนินการ" จะเห็นรหัสลับ (TOKEN)
  *  3) ทำให้ใช้งานได้ › การทำให้ใช้งานได้รายการใหม่ › ประเภท: เว็บแอป
  *       ดำเนินการในฐานะ: ฉัน · ผู้ที่มีสิทธิ์เข้าถึง: ทุกคน → ทำให้ใช้งานได้ → คัดลอก URL (ลงท้าย /exec)
  *  4) ใน Quiz Live › กล่อง ⚙ ผู้ดูแลระบบ › อีเมลระบบ → วาง URL และรหัสลับ → บันทึก → ส่งอีเมลทดสอบ
@@ -18,6 +18,8 @@ function setup() {
   var t = p.getProperty('TOKEN');
   if (!t) { t = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8); p.setProperty('TOKEN', t); }
   MailApp.getRemainingDailyQuota(); // ขอสิทธิ์ส่งอีเมลตั้งแต่ตอนนี้
+  DriveApp.getRootFolder();          // อ่านลายเซ็นระบบเดิมใน Drive
+  UrlFetchApp.fetch('https://www.google.com', { muteHttpExceptions: true }); // ดึงลายเซ็นจาก Supabase
   Logger.log('รหัสลับ (TOKEN) สำหรับใส่ใน Quiz Live: ' + t);
   Logger.log('โควตาส่งอีเมลที่เหลือวันนี้: ' + MailApp.getRemainingDailyQuota());
 }
@@ -36,6 +38,7 @@ function doPost(e) {
     var m = tpl(d);
     var opt = { to: to.join(','), subject: m.subject || d.subject, htmlBody: m.html, body: m.text, name: d.from_name || 'Quiz Live' };
     if (d.reply_to && /@/.test(d.reply_to)) opt.replyTo = d.reply_to;
+    if (d.kind === 'report') opt.attachments = reportPdfs_(d);
     MailApp.sendEmail(opt);
     return out({ ok: true, sent: to.length, quota: MailApp.getRemainingDailyQuota() });
   } catch (err) {
@@ -43,6 +46,91 @@ function doPost(e) {
   }
 }
 
+
+// ---------- ไฟล์ PDF แนบ (ใบลงชื่อพร้อมลายเซ็น · รายงานสรุป) ----------
+function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function fname_(s) { return String(s || '').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80); }
+
+/** ลายเซ็น → data URI · ลิงก์ชั่วคราวจาก Supabase (sig_url) หรือไฟล์ใน Drive ระบบเดิม (sig_drive) */
+function loadSigs_(rows) {
+  var urls = [], idx = [];
+  rows.forEach(function (r, i) {
+    ['sig', 'fin'].forEach(function (k) { if (r[k + '_url']) { urls.push({ url: r[k + '_url'], muteHttpExceptions: true }); idx.push([i, k]); } });
+  });
+  for (var s = 0; s < urls.length; s += 40) {
+    var res = UrlFetchApp.fetchAll(urls.slice(s, s + 40));
+    res.forEach(function (x, j) {
+      var p = idx[s + j];
+      if (x.getResponseCode() === 200) rows[p[0]][p[1] + '_img'] = 'data:image/png;base64,' + Utilities.base64Encode(x.getBlob().getBytes());
+    });
+  }
+  rows.forEach(function (r) {
+    ['sig', 'fin'].forEach(function (k) {
+      if (!r[k + '_img'] && r[k + '_drive']) {
+        try { var b = DriveApp.getFileById(r[k + '_drive']).getBlob();
+              r[k + '_img'] = 'data:' + (b.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(b.getBytes()); } catch (e) {}
+      }
+    });
+  });
+}
+
+function signSheetHtml_(d) {
+  var c = d.course || {}, sh = d.sheet || {}, rows = sh.rows || [], fin = !!sh.finish;
+  var h = '<html><head><meta charset="utf-8"><style>' +
+    '@page{size:A4;margin:10mm}body{font-family:Sarabun,Tahoma,sans-serif;font-size:12px;color:#000}' +
+    'table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:2px 4px;vertical-align:middle}th{background:#eee;font-size:11.5px}' +
+    'td.s{height:36px;text-align:center;padding:0}td.s img{max-height:34px;max-width:120px}tr{page-break-inside:avoid}thead{display:table-header-group}' +
+    '.c{text-align:center}</style></head><body>' +
+    '<div style="text-align:center;margin-bottom:6px"><div style="font-size:13px;font-weight:bold">แบบลงทะเบียนผู้เข้าร่วมอบรม</div>' +
+    '<div style="font-size:15px;font-weight:bold">' + esc_(c.cert_title || c.title) + '</div>' +
+    '<div style="font-size:12px">' + esc_(sh.label || 'ทุกวัน / ทุกรอบ') + (c.location ? ' · ' + esc_(c.location) : '') + '</div></div>' +
+    '<table><thead><tr><th style="width:5%">ที่</th><th style="width:11%">รหัสพนักงาน</th><th>ชื่อ - นามสกุล</th><th style="width:19%">แผนก</th>' +
+    '<th style="width:13%">วันที่ / รอบที่อบรม</th><th style="width:15%">ลงทะเบียนอบรม<br><span style="font-weight:normal">(ลายเซ็น)</span></th>' +
+    (fin ? '<th style="width:15%">บันทึกหลังอบรม<br><span style="font-weight:normal">(ลายเซ็น)</span></th>' : '') + '</tr></thead><tbody>';
+  rows.forEach(function (r, i) {
+    h += '<tr><td class="c">' + (i + 1) + '</td><td class="c">' + esc_(r.emp_id) + '</td><td>' + esc_(r.name) + (r.late ? ' <i style="font-size:10px">(ย้อนหลัง)</i>' : '') + '</td><td>' + esc_(r.dept) + '</td>' +
+      '<td class="c" style="font-size:10.5px;line-height:1.25">' + esc_(r.when) + '<br>' + esc_(r.round) + '</td>' +
+      '<td class="s">' + (r.sig_img ? '<img src="' + r.sig_img + '">' : '') + '</td>' + (fin ? '<td class="s">' + (r.fin_img ? '<img src="' + r.fin_img + '">' : '') + '</td>' : '') + '</tr>';
+  });
+  if (!rows.length) h += '<tr><td colspan="' + (fin ? 7 : 6) + '" class="c" style="padding:12px">ไม่มีรายชื่อ</td></tr>';
+  h += '</tbody></table><div style="font-size:10px;text-align:right;margin-top:4px">รวม ' + rows.length + ' คน · สร้างจาก Quiz Live เมื่อ ' +
+    Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm') + ' น.</div></body></html>';
+  return h;
+}
+
+function summaryHtml_(d) {
+  var c = d.course || {}, s = d.summary || {}, B = 'border:1px solid #000;padding:3px 5px';
+  var h = '<html><head><meta charset="utf-8"><style>@page{size:A4;margin:10mm}body{font-family:Sarabun,Tahoma,sans-serif;font-size:12px}table{width:100%;border-collapse:collapse;margin-bottom:8px}th{background:#eee}tr{page-break-inside:avoid}</style></head><body>' +
+    '<div style="text-align:center;margin-bottom:8px"><div style="font-size:15px;font-weight:bold">รายงานสรุปผู้เข้าอบรม (เทียบการจองกับผู้เข้าอบรมจริง)</div>' +
+    '<div style="font-size:13px">' + esc_(c.cert_title || c.title) + '</div><div style="font-size:11px">ข้อมูล ณ ' + Utilities.formatDate(new Date(d.asof || new Date()), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm') + ' น.</div></div>' +
+    '<table><tr>' + [['อบรมแล้ว', s.attended], ['ทั้งหมด', s.total || '-'], ['คิดเป็น', s.total ? s.percent + '%' : '-'], ['จองและมา', s.bookedAttended], ['จองแต่ไม่มา', s.absentPast],
+      ['วันนี้จองแต่ยังไม่มา', s.absentToday], ['ไม่จองแต่มา', s.notBooked], ['ลงทะเบียนใหม่หน้างาน', s.walkin]]
+      .map(function (x) { return '<td style="' + B + ';text-align:center">' + x[0] + '<br><b style="font-size:16px">' + x[1] + '</b></td>'; }).join('') + '</tr></table>';
+  var rr = d.rounds || [];
+  if (rr.length) h += '<div style="font-weight:bold;margin:6px 0 2px">รายรอบ</div><table><tr><th style="' + B + '">รอบ</th><th style="' + B + '">จอง</th><th style="' + B + '">มา</th></tr>' +
+    rr.map(function (r) { return '<tr><td style="' + B + '">' + esc_(r.label) + '</td><td style="' + B + ';text-align:right">' + r.booked + '</td><td style="' + B + ';text-align:right">' + r.attended + '</td></tr>'; }).join('') + '</table>';
+  h += '<div style="font-weight:bold;margin:6px 0 2px">รายแผนก</div><table><tr>' + ['แผนก', 'เป้าหมาย', 'จอง', 'เข้าอบรม', '%'].map(function (t) { return '<th style="' + B + '">' + t + '</th>'; }).join('') + '</tr>' +
+    (d.depts || []).map(function (x) { return '<tr><td style="' + B + '">' + esc_(x.dept) + '</td><td style="' + B + ';text-align:right">' + (x.target || '-') + '</td><td style="' + B + ';text-align:right">' + x.booked +
+      '</td><td style="' + B + ';text-align:right">' + x.attended + '</td><td style="' + B + ';text-align:right">' + (x.target ? x.percent + '%' : '-') + '</td></tr>'; }).join('') + '</table>';
+  var ab = (d.absent || []).filter(function (a) { return a.state !== 'ยังไม่ถึงวันจอง'; });
+  if (ab.length) h += '<div style="font-weight:bold;margin:10px 0 2px">จองแล้วแต่ไม่ได้ลงชื่อ (' + ab.length + ' คน)</div><table><tr>' +
+    ['รหัส', 'ชื่อ-นามสกุล', 'แผนก', 'วัน/รอบจอง', 'สถานะ'].map(function (t) { return '<th style="' + B + '">' + t + '</th>'; }).join('') + '</tr>' +
+    ab.map(function (a) { return '<tr><td style="' + B + '">' + esc_(a.emp_id) + '</td><td style="' + B + '">' + esc_(a.name) + '</td><td style="' + B + '">' + esc_(a.dept) + '</td><td style="' + B + '">' + esc_(a.round) + '</td><td style="' + B + '">' + esc_(a.state) + '</td></tr>'; }).join('') + '</table>';
+  return h + '</body></html>';
+}
+
+function reportPdfs_(d) {
+  var out = [], c = d.course || {}, p = d.parts || {};
+  if (p.summary_pdf) out.push(Utilities.newBlob(summaryHtml_(d), 'text/html', 'r.html').getAs('application/pdf').setName(fname_('สรุปผู้เข้าอบรม ' + c.title) + '.pdf'));
+  if (p.sheet && d.sheet) {
+    loadSigs_(d.sheet.rows || []);
+    out.push(Utilities.newBlob(signSheetHtml_(d), 'text/html', 's.html').getAs('application/pdf').setName(fname_('ใบลงชื่อ ' + c.title + ' ' + (d.sheet.label || '')) + '.pdf'));
+  }
+  return out;
+}
+
+/** ทดสอบสิทธิ์ Drive/UrlFetch ก่อนใช้จริง (เรียกครั้งเดียวหลังอัปเดตโค้ด) */
+function authorizeExtras() { DriveApp.getRootFolder(); UrlFetchApp.fetch('https://www.google.com', { muteHttpExceptions: true }); Logger.log('อนุญาตสิทธิ์ Drive และ UrlFetch แล้ว'); }
 // ===== แม่แบบอีเมล Quiz Live (ใช้ร่วมกันทั้งหน้าเว็บและ Apps Script) =====
 var MailTpl = (function () {
   var TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -136,6 +224,43 @@ var MailTpl = (function () {
       return { subject: d.subject, html: shell('Quiz Live · สรุปงานอบรม · ' + c.title, body,
         'ส่งเฉพาะวันที่มีความเคลื่อนไหว · ส่งถึงเจ้าของงานและผู้จัดร่วม · ตั้งค่าได้ที่ งานอบรม › ตั้งค่า › การแจ้งเตือนทางอีเมล'),
         text: 'สรุป ' + c.title + ': จองใหม่ ' + n('จอง') + ' ย้าย ' + n('ย้ายรอบ') + ' ยกเลิก ' + n('ยกเลิกจอง') + '\n' + url + '\n' };
+    },
+    // สรุปการเข้าอบรมทั้งงาน (ผู้จัดกดส่งเอง) · ใบลงชื่อ/รายงานแนบเป็น PDF (สร้างใน Apps Script)
+    report: function (d) {
+      var c = d.course || {}, s = d.summary || {}, url = link(d.site, '#course/' + c.id + ':attend');
+      function kpi(v, t, sub, bg, fg) { return '<td width="33%" style="padding:4px;vertical-align:top"><div style="background:' + bg + ';border-radius:10px;padding:10px 6px;text-align:center">' +
+        '<div style="font-size:13px;color:#475569">' + t + '</div><div style="font-size:26px;font-weight:700;color:' + fg + '">' + v + '</div>' + (sub ? '<div style="font-size:12px;color:#64748b">' + sub + '</div>' : '') + '</div></td>'; }
+      var TD = 'padding:5px 6px;border-bottom:1px solid #f1f5f9', TH = 'padding:5px 6px;border-bottom:1px solid #e2e8f0;color:#64748b;font-weight:600;font-size:13px';
+      var parts = [];
+      parts.push('<div style="font-size:21px;font-weight:700">สรุปการเข้าอบรม</div><div style="color:#64748b;font-size:14px;margin-bottom:10px">' + esc(c.cert_title || c.title) + '<br>ข้อมูล ณ ' + esc(dateTH(d.asof, true) + ' ' + timeTH(d.asof)) + ' น.</div>');
+      parts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+        kpi(s.attended, 'อบรมแล้ว', 'คน', '#e3efff', '#1e3a8a') + kpi(s.total || '-', 'ทั้งหมด', s.total ? 'คนในรายชื่อ' : 'ไม่มีรายชื่อเป้าหมาย', '#f1f5f9', '#0f172a') +
+        kpi(s.total ? s.percent + '%' : '-', 'คิดเป็น', 'ความคืบหน้า', '#dff3e8', '#1b6b42') + '</tr></table>');
+      parts.push('<div style="font-size:13px;color:#475569;text-align:center;margin:6px 0 14px">จองไว้ล่วงหน้า <b>' + s.bookedAttended + '</b> · ไม่ได้จอง <b>' + s.notBooked + '</b> · ลงทะเบียนใหม่หน้างาน <b>' + s.walkin + '</b>' +
+        (s.finish != null ? ' · ลงชื่อหลังอบรม <b>' + s.finish + '</b>' : '') + (s.late ? ' · ลงชื่อย้อนหลัง <b>' + s.late + '</b>' : '') + '</div>');
+      if (s.booked) parts.push('<div style="font-weight:700;margin:4px 0">เทียบการจองกับผู้เข้าอบรมจริง</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+        kpi(s.bookedAttended, 'จองและมา', '', '#dff3e8', '#1b6b42') + kpi(s.absentPast, 'จองแต่ไม่มา', [s.absentToday ? 'วันนี้ยังไม่มา ' + s.absentToday : '', s.upcoming ? 'ยังไม่ถึงวัน ' + s.upcoming : ''].filter(Boolean).join(' · '), '#fde8e8', '#a32020') +
+        kpi(s.notBooked, 'ไม่จองแต่มา', '', '#fff1d6', '#8a5a00') + '</tr></table>');
+      var rr = d.rounds || [];
+      if (rr.length) parts.push('<div style="font-weight:700;margin:14px 0 4px">รายรอบ</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">' +
+        '<tr><td style="' + TH + '">รอบ</td><td align="right" style="' + TH + '">จอง</td><td align="right" style="' + TH + '">มา</td></tr>' +
+        rr.map(function (r) { return '<tr><td style="' + TD + '">' + esc(r.label) + (r.starts_at ? ' <span style="color:#64748b">· ' + esc(dateTH(r.starts_at)) + '</span>' : '') + '</td><td align="right" style="' + TD + '">' + r.booked + '</td><td align="right" style="' + TD + '"><b>' + r.attended + '</b></td></tr>'; }).join('') + '</table>');
+      var dp = d.depts || [];
+      if (dp.length) parts.push('<div style="font-weight:700;margin:14px 0 4px">ความคืบหน้ารายแผนก (น้อยไปมาก)</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13.5px">' +
+        '<tr><td style="' + TH + '">แผนก</td><td align="right" style="' + TH + '">เป้าหมาย</td><td align="right" style="' + TH + '">จอง</td><td align="right" style="' + TH + '">อบรม</td><td align="right" style="' + TH + '">%</td></tr>' +
+        dp.map(function (x) { return '<tr><td style="' + TD + '">' + esc(x.dept) + '</td><td align="right" style="' + TD + '">' + (x.target || '-') + '</td><td align="right" style="' + TD + '">' + x.booked + '</td><td align="right" style="' + TD + '">' + x.attended +
+          '</td><td align="right" style="' + TD + ';font-weight:700;color:' + (x.target && x.percent < 50 ? '#a32020' : '#1b6b42') + '">' + (x.target ? x.percent + '%' : '-') + '</td></tr>'; }).join('') + '</table>');
+      var ab = (d.absent || []).filter(function (a) { return a.state !== 'ยังไม่ถึงวันจอง'; });
+      if (ab.length) parts.push('<div style="font-weight:700;margin:14px 0 4px">จองแล้วแต่ยังไม่ได้ลงชื่อ (' + ab.length + ' คน)</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px">' +
+        ab.slice(0, 80).map(function (a) { return '<tr><td style="' + TD + '">' + esc(a.emp_id) + '</td><td style="' + TD + '">' + esc(a.name) + '<br><span style="color:#64748b">' + esc(a.dept) + '</span></td><td style="' + TD + '">' + esc(a.round) +
+          '</td><td style="' + TD + ';color:' + (a.state === 'ไม่มา' ? '#a32020' : '#8a5a00') + ';white-space:nowrap">' + esc(a.state) + '</td></tr>'; }).join('') +
+        (ab.length > 80 ? '<tr><td colspan="4" style="' + TD + ';color:#64748b">… และอีก ' + (ab.length - 80) + ' คน (ดูในไฟล์ PDF แนบ)</td></tr>' : '') + '</table>');
+      var att = [];
+      if ((d.parts || {}).sheet) att.push('ใบลงชื่อพร้อมลายเซ็น' + (d.sheet && d.sheet.label ? ' (' + d.sheet.label + ')' : ''));
+      if ((d.parts || {}).summary_pdf) att.push('รายงานสรุป');
+      parts.push('<div style="margin:18px 0 0">' + (att.length ? '<div style="font-size:14px;margin-bottom:12px">📎 ไฟล์แนบ: ' + esc(att.join(' และ ')) + ' (PDF)</div>' : '') + btn(url, 'เปิดงานอบรม') + '</div>');
+      return { subject: d.subject, html: shell('Quiz Live · สรุปงานอบรม · ' + c.title, parts.join(''), 'ส่งโดย ' + esc(d.sender_name || '') + ' ผ่าน Quiz Live · ตอบกลับเพื่อติดต่อผู้ส่ง'),
+        text: 'สรุปการเข้าอบรม ' + c.title + '\nอบรมแล้ว ' + s.attended + (s.total ? ' / ' + s.total + ' (' + s.percent + '%)' : '') + ' คน\n' + url + '\n' };
     },
     test: function (d) {
       return { subject: d.subject || '[Quiz Live] ทดสอบการส่งอีเมล', html: shell('Quiz Live', '<div style="font-size:20px;font-weight:700">ส่งอีเมลได้แล้ว ✓</div><p>ระบบอีเมลของ Quiz Live เชื่อมกับ Apps Script เรียบร้อย</p>', 'อีเมลทดสอบจาก Quiz Live'),

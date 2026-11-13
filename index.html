@@ -2907,11 +2907,13 @@ const Course = {
       <div class="row"><a class="btn light sm" href="#admin">← งานอบรมทั้งหมด</a>
         <div class="grow" style="min-width:0"><h2 class="sec">${isNew ? 'สร้างงานอบรมใหม่' : esc(c.title)}</h2>
           ${isNew ? '' : `<div class="hint">${[courseRange(this.rows), (Array.isArray(c.hospitals) ? c.hospitals : this.hospitals).join(', '),
-            this.rows.length ? `${this.rows.length} รุ่น${c.seats ? ' × ' + c.seats + ' ที่นั่ง' : ''}` : ''].filter(Boolean).map(esc).join(' · ')}</div>`}</div></div>
+            this.rows.length ? `${this.rows.length} รุ่น${c.seats ? ' × ' + c.seats + ' ที่นั่ง' : ''}` : ''].filter(Boolean).map(esc).join(' · ')}</div>`}</div>
+        ${isNew ? '' : '<button class="btn sm" id="c-send" title="ส่งสรุปการเข้าอบรมและใบลงชื่อทางอีเมล">✉ ส่งสรุป</button>'}</div>
       ${tabs.length ? `<nav class="secnav sm" aria-label="ส่วนของงานอบรม">${tabs.map(([k, t]) =>
         `<button data-ctab="${k}" class="${this.tab === k ? 'on' : ''}">${t}</button>`).join('')}</nav>` : ''}
       <div id="cbody"></div>`);
     bindShell();
+    if ($('#c-send')) $('#c-send').onclick = () => SendReport.dialog(this);
     $$('[data-ctab]').forEach(b => b.onclick = () => {
       if (b.dataset.ctab === 'report') { location.hash = '#report/c=' + c.id; return; }
       this.tab = b.dataset.ctab; history.replaceState(null, '', '#course/' + c.id + ':' + this.tab); this.render(); });
@@ -3621,6 +3623,43 @@ var MailTpl = (function () {
         'ส่งเฉพาะวันที่มีความเคลื่อนไหว · ส่งถึงเจ้าของงานและผู้จัดร่วม · ตั้งค่าได้ที่ งานอบรม › ตั้งค่า › การแจ้งเตือนทางอีเมล'),
         text: 'สรุป ' + c.title + ': จองใหม่ ' + n('จอง') + ' ย้าย ' + n('ย้ายรอบ') + ' ยกเลิก ' + n('ยกเลิกจอง') + '\n' + url + '\n' };
     },
+    // สรุปการเข้าอบรมทั้งงาน (ผู้จัดกดส่งเอง) · ใบลงชื่อ/รายงานแนบเป็น PDF (สร้างใน Apps Script)
+    report: function (d) {
+      var c = d.course || {}, s = d.summary || {}, url = link(d.site, '#course/' + c.id + ':attend');
+      function kpi(v, t, sub, bg, fg) { return '<td width="33%" style="padding:4px;vertical-align:top"><div style="background:' + bg + ';border-radius:10px;padding:10px 6px;text-align:center">' +
+        '<div style="font-size:13px;color:#475569">' + t + '</div><div style="font-size:26px;font-weight:700;color:' + fg + '">' + v + '</div>' + (sub ? '<div style="font-size:12px;color:#64748b">' + sub + '</div>' : '') + '</div></td>'; }
+      var TD = 'padding:5px 6px;border-bottom:1px solid #f1f5f9', TH = 'padding:5px 6px;border-bottom:1px solid #e2e8f0;color:#64748b;font-weight:600;font-size:13px';
+      var parts = [];
+      parts.push('<div style="font-size:21px;font-weight:700">สรุปการเข้าอบรม</div><div style="color:#64748b;font-size:14px;margin-bottom:10px">' + esc(c.cert_title || c.title) + '<br>ข้อมูล ณ ' + esc(dateTH(d.asof, true) + ' ' + timeTH(d.asof)) + ' น.</div>');
+      parts.push('<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+        kpi(s.attended, 'อบรมแล้ว', 'คน', '#e3efff', '#1e3a8a') + kpi(s.total || '-', 'ทั้งหมด', s.total ? 'คนในรายชื่อ' : 'ไม่มีรายชื่อเป้าหมาย', '#f1f5f9', '#0f172a') +
+        kpi(s.total ? s.percent + '%' : '-', 'คิดเป็น', 'ความคืบหน้า', '#dff3e8', '#1b6b42') + '</tr></table>');
+      parts.push('<div style="font-size:13px;color:#475569;text-align:center;margin:6px 0 14px">จองไว้ล่วงหน้า <b>' + s.bookedAttended + '</b> · ไม่ได้จอง <b>' + s.notBooked + '</b> · ลงทะเบียนใหม่หน้างาน <b>' + s.walkin + '</b>' +
+        (s.finish != null ? ' · ลงชื่อหลังอบรม <b>' + s.finish + '</b>' : '') + (s.late ? ' · ลงชื่อย้อนหลัง <b>' + s.late + '</b>' : '') + '</div>');
+      if (s.booked) parts.push('<div style="font-weight:700;margin:4px 0">เทียบการจองกับผู้เข้าอบรมจริง</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+        kpi(s.bookedAttended, 'จองและมา', '', '#dff3e8', '#1b6b42') + kpi(s.absentPast, 'จองแต่ไม่มา', [s.absentToday ? 'วันนี้ยังไม่มา ' + s.absentToday : '', s.upcoming ? 'ยังไม่ถึงวัน ' + s.upcoming : ''].filter(Boolean).join(' · '), '#fde8e8', '#a32020') +
+        kpi(s.notBooked, 'ไม่จองแต่มา', '', '#fff1d6', '#8a5a00') + '</tr></table>');
+      var rr = d.rounds || [];
+      if (rr.length) parts.push('<div style="font-weight:700;margin:14px 0 4px">รายรอบ</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">' +
+        '<tr><td style="' + TH + '">รอบ</td><td align="right" style="' + TH + '">จอง</td><td align="right" style="' + TH + '">มา</td></tr>' +
+        rr.map(function (r) { return '<tr><td style="' + TD + '">' + esc(r.label) + (r.starts_at ? ' <span style="color:#64748b">· ' + esc(dateTH(r.starts_at)) + '</span>' : '') + '</td><td align="right" style="' + TD + '">' + r.booked + '</td><td align="right" style="' + TD + '"><b>' + r.attended + '</b></td></tr>'; }).join('') + '</table>');
+      var dp = d.depts || [];
+      if (dp.length) parts.push('<div style="font-weight:700;margin:14px 0 4px">ความคืบหน้ารายแผนก (น้อยไปมาก)</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13.5px">' +
+        '<tr><td style="' + TH + '">แผนก</td><td align="right" style="' + TH + '">เป้าหมาย</td><td align="right" style="' + TH + '">จอง</td><td align="right" style="' + TH + '">อบรม</td><td align="right" style="' + TH + '">%</td></tr>' +
+        dp.map(function (x) { return '<tr><td style="' + TD + '">' + esc(x.dept) + '</td><td align="right" style="' + TD + '">' + (x.target || '-') + '</td><td align="right" style="' + TD + '">' + x.booked + '</td><td align="right" style="' + TD + '">' + x.attended +
+          '</td><td align="right" style="' + TD + ';font-weight:700;color:' + (x.target && x.percent < 50 ? '#a32020' : '#1b6b42') + '">' + (x.target ? x.percent + '%' : '-') + '</td></tr>'; }).join('') + '</table>');
+      var ab = (d.absent || []).filter(function (a) { return a.state !== 'ยังไม่ถึงวันจอง'; });
+      if (ab.length) parts.push('<div style="font-weight:700;margin:14px 0 4px">จองแล้วแต่ยังไม่ได้ลงชื่อ (' + ab.length + ' คน)</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13px">' +
+        ab.slice(0, 80).map(function (a) { return '<tr><td style="' + TD + '">' + esc(a.emp_id) + '</td><td style="' + TD + '">' + esc(a.name) + '<br><span style="color:#64748b">' + esc(a.dept) + '</span></td><td style="' + TD + '">' + esc(a.round) +
+          '</td><td style="' + TD + ';color:' + (a.state === 'ไม่มา' ? '#a32020' : '#8a5a00') + ';white-space:nowrap">' + esc(a.state) + '</td></tr>'; }).join('') +
+        (ab.length > 80 ? '<tr><td colspan="4" style="' + TD + ';color:#64748b">… และอีก ' + (ab.length - 80) + ' คน (ดูในไฟล์ PDF แนบ)</td></tr>' : '') + '</table>');
+      var att = [];
+      if ((d.parts || {}).sheet) att.push('ใบลงชื่อพร้อมลายเซ็น' + (d.sheet && d.sheet.label ? ' (' + d.sheet.label + ')' : ''));
+      if ((d.parts || {}).summary_pdf) att.push('รายงานสรุป');
+      parts.push('<div style="margin:18px 0 0">' + (att.length ? '<div style="font-size:14px;margin-bottom:12px">📎 ไฟล์แนบ: ' + esc(att.join(' และ ')) + ' (PDF)</div>' : '') + btn(url, 'เปิดงานอบรม') + '</div>');
+      return { subject: d.subject, html: shell('Quiz Live · สรุปงานอบรม · ' + c.title, parts.join(''), 'ส่งโดย ' + esc(d.sender_name || '') + ' ผ่าน Quiz Live · ตอบกลับเพื่อติดต่อผู้ส่ง'),
+        text: 'สรุปการเข้าอบรม ' + c.title + '\nอบรมแล้ว ' + s.attended + (s.total ? ' / ' + s.total + ' (' + s.percent + '%)' : '') + ' คน\n' + url + '\n' };
+    },
     test: function (d) {
       return { subject: d.subject || '[Quiz Live] ทดสอบการส่งอีเมล', html: shell('Quiz Live', '<div style="font-size:20px;font-weight:700">ส่งอีเมลได้แล้ว ✓</div><p>ระบบอีเมลของ Quiz Live เชื่อมกับ Apps Script เรียบร้อย</p>', 'อีเมลทดสอบจาก Quiz Live'),
         text: 'ระบบอีเมลของ Quiz Live เชื่อมกับ Apps Script เรียบร้อย' };
@@ -3655,6 +3694,94 @@ const Mailer = {
       headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw }) });
     if (!r.ok) { const j = await r.json().catch(() => ({})); if (r.status === 401) this.tok = null; throw new Error((j.error && j.error.message) || 'Gmail ' + r.status); }
     return true;
+  }
+};
+
+
+// ---------- v14.7 ส่งสรุปทางอีเมล (ผู้จัดกดเอง): สรุปทั้งงาน + รายงาน PDF + ใบลงชื่อพร้อมลายเซ็น PDF ----------
+const SendReport = {
+  bkkDay(s) { return s ? new Date(new Date(s).getTime() + 7 * 3600e3).toISOString().slice(0, 10) : ''; },
+  async build(c, rows, scope) {
+    const [people, att] = await Promise.all([rpc('course_people', { p_course: c.id }), Attend.load(c, rows)]);
+    const today = this.bkkDay(new Date()), lab = Object.fromEntries(rows.map(r => [r.id, r]));
+    const roster = people.filter(p => p.in_roster), came = people.filter(p => p.attended.length);
+    const booked = people.filter(p => p.booking), hasRoster = roster.length > 0;
+    const absent = booked.filter(p => !p.attended.length).map(p => { const r = lab[p.booking.training_id] || {}, d = this.bkkDay(r.starts_at);
+      return { emp_id: p.emp_id, name: p.name, dept: p.dept, round: r.label || '', d,
+        state: !d ? 'ยังไม่มา' : d < today ? 'ไม่มา' : d === today ? 'วันนี้ ยังไม่มา' : 'ยังไม่ถึงวันจอง' }; })
+      .sort((a, b) => (a.d || '').localeCompare(b.d || '') || a.round.localeCompare(b.round, 'th'));
+    const fin = stepOn(c, 'finish') || att.some(a => a.finish_at);
+    const summary = { total: roster.length, attended: came.length, percent: roster.length ? Math.round(came.filter(p => p.in_roster).length / roster.length * 1000) / 10 : 0,
+      booked: booked.length, bookedAttended: booked.filter(p => p.attended.length).length, notBooked: came.filter(p => !p.booking).length,
+      walkin: hasRoster ? came.filter(p => !p.in_roster).length : att.filter(a => a.walk_in).length,
+      finish: fin ? came.filter(p => p.attended.some(a => a.finish)).length : null, late: came.filter(p => p.attended.some(a => a.late)).length,
+      absentPast: absent.filter(a => a.state === 'ไม่มา').length, absentToday: absent.filter(a => a.state === 'วันนี้ ยังไม่มา').length,
+      upcoming: absent.filter(a => a.state === 'ยังไม่ถึงวันจอง').length };
+    const D = {}, dr = k => D[k] || (D[k] = { dept: k, target: 0, booked: 0, attended: 0 });
+    roster.forEach(p => dr(p.dept || 'ไม่ระบุ').target++);
+    booked.forEach(p => dr(p.dept || 'ไม่ระบุ').booked++);
+    came.forEach(p => dr(p.dept || 'ไม่ระบุ').attended++);
+    const depts = Object.values(D).map(x => ({ ...x, percent: x.target ? Math.round(x.attended / x.target * 1000) / 10 : 0 }))
+      .sort((a, b) => hasRoster ? (a.percent - b.percent || b.target - a.target) : (b.attended - a.attended || a.dept.localeCompare(b.dept, 'th')));
+    // ใบลงชื่อตามขอบเขต: '' = ทั้งงาน · d:YYYY-MM-DD = วันนั้น · r:<id> = รอบนั้น
+    const inScope = a => !scope ? true : scope.startsWith('d:') ? this.bkkDay((lab[a.training_id] || {}).starts_at || a.checkin_at) === scope.slice(2) : a.training_id === scope.slice(2);
+    const list = att.filter(a => (a.checkin_at || a.finish_at) && inScope(a))
+      .sort((a, b) => ((lab[a.training_id] || {}).round_no || 0) - ((lab[b.training_id] || {}).round_no || 0) || String(a.checkin_at || '').localeCompare(String(b.checkin_at || '')));
+    const paths = [...new Set(list.flatMap(a => [a.checkin_sig, a.finish_sig]).filter(x => x && !/^gdrive:/.test(x)))], urls = {};
+    for (let i = 0; i < paths.length; i += 100) {
+      const { data } = await sb.storage.from('signatures').createSignedUrls(paths.slice(i, i + 100), 4 * 3600);
+      (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; });
+    }
+    const sig = (p, k) => !p ? {} : /^gdrive:/.test(p) ? { [k + '_drive']: p.slice(7) } : { [k + '_url']: urls[p] || '' };
+    const sheetRows = list.map(a => { const r = lab[a.training_id] || {};
+      return { emp_id: a.emp_id, name: a.full_name, dept: a.department, round: r.label || '', when: r.starts_at ? thDate(r.starts_at, { year: 'numeric' }) : a.checkin_at ? thDate(a.checkin_at, { year: 'numeric' }) : '',
+               late: a.late, ...sig(a.checkin_sig, 'sig'), ...sig(a.finish_sig, 'fin') }; });
+    const sopt = this.scopes(rows).find(x => x[0] === (scope || ''));
+    return { asof: new Date().toISOString(), summary, depts, absent: absent.map(({ d, ...x }) => x),
+      rounds: rows.map(r => ({ label: r.label, starts_at: r.starts_at, booked: r.booked || 0, attended: r.checkin || 0 })),
+      sheet: { label: sopt ? sopt[1] : '', finish: fin, rows: sheetRows } };
+  },
+  scopes(rows) {
+    const days = [...new Set(rows.map(r => this.bkkDay(r.starts_at)).filter(Boolean))].sort();
+    return [['', 'ทั้งงาน (ทุกรอบ)']].concat(days.length > 1 ? days.map(d => ['d:' + d, 'วันที่ ' + thDate(d + 'T05:00:00Z', { year: 'numeric', weekday: 'short' })]) : [])
+      .concat(rows.map(r => ['r:' + r.id, r.label + (r.starts_at ? ' · ' + thDate(r.starts_at) : '')]));
+  },
+  dialog(C) {
+    const c = C.c, me = (C.user.email || '').toLowerCase(), team = [...new Set([c.owner_email, ...(c.cohosts || [])].filter(Boolean).map(x => x.toLowerCase()))];
+    const d = document.createElement('div'); d.className = 'pmodal';
+    d.innerHTML = `<form class="box" style="max-width:520px;width:100%;text-align:left;display:grid;gap:12px" autocomplete="off">
+      <h3 style="margin:0">✉ ส่งสรุปทางอีเมล</h3>
+      <p class="hint" style="margin:0">${esc(c.title)} · ข้อมูล ณ ตอนกดส่ง · กดส่งได้ทุกเมื่อ (รายวัน หรือหลังจบงาน)</p>
+      <div style="display:grid;gap:6px"><b style="font-size:14px">สิ่งที่ส่ง</b>
+        <label class="switch"><input type="checkbox" checked disabled> สรุปการเข้าอบรมทั้งงาน (ในเนื้ออีเมล) — อบรมแล้ว/ทั้งหมด/% · เทียบจองกับมาจริง · รายรอบ · รายแผนก · คนที่จองแต่ยังไม่มา</label>
+        <label class="switch"><input type="checkbox" id="rp-sum" checked> แนบรายงานสรุป (PDF สำหรับพิมพ์)</label>
+        <label class="switch"><input type="checkbox" id="rp-sheet" checked> แนบใบลงชื่อพร้อมลายเซ็น (PDF)</label>
+        <select class="inp" id="rp-scope" aria-label="ขอบเขตใบลงชื่อ">${this.scopes(C.rows).map(([v, t]) => `<option value="${esc(v)}">ใบลงชื่อ: ${esc(t)}</option>`).join('')}</select></div>
+      <div style="display:grid;gap:4px"><b style="font-size:14px">ส่งถึง</b>
+        ${team.map(e => `<label class="switch"><input type="checkbox" data-rpto="${esc(e)}" ${e === me ? 'checked' : ''}> ${esc(e)}${e === me ? ' (คุณ)' : e === (c.owner_email || '').toLowerCase() ? ' (เจ้าของงาน)' : ''}</label>`).join('')}
+        <input class="inp" id="rp-more" placeholder="อีเมลอื่น @${esc(CFG.ALLOWED_DOMAIN || '')} (คั่นด้วย , )"></div>
+      <p class="hint" style="margin:0" id="rp-msg"></p>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn light" data-x>ยกเลิก</button><button class="btn sun" id="rp-go">ส่งอีเมล</button></div></form>`;
+    document.body.appendChild(d);
+    const close = () => d.remove(); d.querySelector('[data-x]').onclick = close; d.onclick = e => { if (e.target === d) close(); };
+    const q = s => d.querySelector(s);
+    q('#rp-sheet').onchange = () => { q('#rp-scope').disabled = !q('#rp-sheet').checked; };
+    q('form').onsubmit = async e => {
+      e.preventDefault();
+      const dom = (CFG.ALLOWED_DOMAIN || '').toLowerCase();
+      const more = q('#rp-more').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean).map(x => x.includes('@') || !dom ? x : x + '@' + dom);
+      const to = [...new Set([...[...d.querySelectorAll('[data-rpto]:checked')].map(x => x.dataset.rpto), ...more])];
+      if (!to.length) return toast('เลือกผู้รับอย่างน้อย 1 คน', true);
+      const b = q('#rp-go'); b.disabled = true; q('#rp-msg').textContent = 'กำลังรวบรวมข้อมูล…';
+      try {
+        const data = await this.build(c, C.rows, q('#rp-scope').value);
+        if (!q('#rp-sheet').checked) data.sheet.rows = [];
+        data.parts = { summary_pdf: q('#rp-sum').checked, sheet: q('#rp-sheet').checked };
+        q('#rp-msg').textContent = 'กำลังส่ง…';
+        const r = await rpc('send_course_report', { p_course: c.id, p_to: to, p_payload: data });
+        close(); toast(`ส่งแล้วถึง ${r.to.length} คน · อีเมลจะถึงภายใน 1–3 นาที (มีลายเซ็นอาจนานขึ้น)`);
+      } catch (er) { toast(errMsg(er), true); b.disabled = false; q('#rp-msg').textContent = ''; }
+    };
   }
 };
 
