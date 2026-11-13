@@ -3648,3 +3648,41 @@ begin
     'rounds', jsonb_build_array(jsonb_build_object('id', t.id, 'code', t.code, 'label', coalesce(t.round_label, t.title),
         'starts_at', t.starts_at, 'ends_at', t.ends_at, 'checkin_open', true, 'open', false, 'seats', 0, 'booked', 0)));
 end $$;
+
+-- =====================================================================
+-- 26) v15.3: พื้นหลัง QR / โปสเตอร์ของแต่ละงาน (ผู้จัดอัปโหลดรูปธีมงานเอง)
+-- =====================================================================
+alter table public.courses add column if not exists qr_bg text not null default '';
+
+insert into storage.buckets (id, name, public) values ('course-media', 'course-media', true) on conflict (id) do nothing;
+update storage.buckets set public = true, file_size_limit = 5242880, allowed_mime_types = array['image/png', 'image/jpeg', 'image/webp']
+ where id = 'course-media';
+
+create or replace function public.can_manage_course_path(p_name text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if coalesce(p_name, '') !~ '^[0-9a-f-]{36}/[A-Za-z0-9._-]{1,80}$' then return false; end if;
+  return public.is_staff() and public.can_manage_course(split_part(p_name, '/', 1)::uuid);
+exception when others then return false;
+end $$;
+grant execute on function public.can_manage_course_path(text) to authenticated;
+
+drop policy if exists course_media_ins on storage.objects;
+create policy course_media_ins on storage.objects for insert to authenticated with check (bucket_id = 'course-media' and public.can_manage_course_path(name));
+drop policy if exists course_media_upd on storage.objects;
+create policy course_media_upd on storage.objects for update to authenticated using (bucket_id = 'course-media' and public.can_manage_course_path(name));
+drop policy if exists course_media_del on storage.objects;
+create policy course_media_del on storage.objects for delete to authenticated using (bucket_id = 'course-media' and public.can_manage_course_path(name));
+
+-- ลิงก์พื้นหลังต้องเป็นไฟล์ใน course-media ของงานนั้นเอง (หรือว่าง)
+create or replace function public.courses_qrbg_chk() returns trigger
+language plpgsql as $$
+begin
+  if new.qr_bg is distinct from old.qr_bg and new.qr_bg <> ''
+     and new.qr_bg !~ ('^https://[a-z0-9]+\.supabase\.co/storage/v1/object/public/course-media/' || new.id::text || '/[A-Za-z0-9._-]+$') then
+    raise exception 'ลิงก์พื้นหลังไม่ถูกต้อง';
+  end if;
+  return new;
+end $$;
+drop trigger if exists courses_qrbg_chk on public.courses;
+create trigger courses_qrbg_chk before update on public.courses for each row execute function public.courses_qrbg_chk();

@@ -633,7 +633,9 @@ body.admin .stile strong{color:var(--navy2)}
 .qpaint .qr{background:#fff;border-radius:18px;padding:clamp(10px,2vh,22px);box-shadow:0 8px 24px rgba(0,0,0,.18)}.qpaint .qr img{width:min(50vh,78vw);height:min(50vh,78vw);display:block;image-rendering:pixelated}
 .qpaint .url{font-size:clamp(16px,2.6vh,34px);font-weight:700}.qpaint .ft{font-size:clamp(12px,1.6vh,18px)}
 .qpaint .band{position:absolute;left:0;right:0;top:0;height:7vh}.qpaint .side{position:absolute;left:0;top:0;bottom:0;width:5vw}.qpaint .frame{position:absolute;inset:2vh;border:8px solid;border-radius:20px}
-.qbtns{position:absolute;top:12px;right:12px;display:flex;gap:8px;z-index:2}
+.qbtns{position:absolute;top:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 24px);z-index:2}
+.qpaint .ccard2{background:rgba(255,255,255,.93);border-radius:22px;padding:2.4vh 3vw;display:flex;flex-direction:column;align-items:center;gap:1.4vh;box-shadow:0 10px 30px rgba(0,0,0,.25);max-width:94vw}
+.qpaint .ccard2 .qr{box-shadow:none;padding:6px}.qpaint .ccard2 .qr img{width:min(46vh,72vw);height:min(46vh,72vw)}.qpaint .ccard2 .lg{box-shadow:none}
 @media (max-width:640px){.qpaint .col{padding-top:64px}.qpaint .col.sd{padding-left:9vw}}
 </style>
 </head>
@@ -2553,7 +2555,7 @@ const Training = {
     bindShell();
     if (c) {
       $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(link); } };
-      $('#bigqr').onclick = () => showBigQR(c.title, link);
+      $('#bigqr').onclick = () => showBigQR(c.title, link, { courseId: c.id });
     }
     $('#sw-ck').onchange = async e => {
       const { error } = await sb.from('trainings').update({ checkin_open: e.target.checked }).eq('id', t.id);
@@ -2625,7 +2627,7 @@ const Training = {
       ${this.canOwn ? '<div style="margin-top:28px;text-align:right"><button class="btn danger sm" id="deltr">ลบรอบนี้</button></div>' : ''}`);
     bindShell();
     $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(this.link()); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(this.link()); } };
-    $('#bigqr').onclick = () => showBigQR(this.t.title, this.link());
+    $('#bigqr').onclick = () => showBigQR(this.t.title, this.link(), this.t.course_id ? { courseId: this.t.course_id } : {});
     const upd = async (patch, el) => {
       const { error } = await sb.from('trainings').update(patch).eq('id', this.id);
       if (error) { toast(errMsg(error), true); if (el && el.type === 'checkbox') el.checked = !el.checked; return false; }
@@ -3106,7 +3108,7 @@ const Course = {
       ${this.addRoundHTML()}`;
     this.bindAddRound();
     if ($('#lk-copy')) $('#lk-copy').onclick = async () => { try { await navigator.clipboard.writeText(this.entryLink()); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(this.entryLink()); } };
-    if ($('#lk-qr')) $('#lk-qr').onclick = () => showBigQR(c.title, this.entryLink());
+    if ($('#lk-qr')) $('#lk-qr').onclick = () => showBigQR(c.title, this.entryLink(), { courseId: c.id, bg: c.qr_bg || '' });
     if ($('#ck-all')) $('#ck-all').onclick = async () => {
       const on = !rows.every(r => r.open && r.open.checkin);
       const { error } = await sb.from('trainings').update({ checkin_open: on }).eq('course_id', c.id);
@@ -3287,12 +3289,12 @@ const Course = {
     const c = this.c; this.af = this.af || { round: '', q: '' };
     box.innerHTML = '<div class="center-msg" style="min-height:20vh"><div class="spinner"></div></div>';
     try { this.att = await Attend.load(c, this.rows); } catch (e) { toast(errMsg(e), true); this.att = []; }
-    { const r = await sb.from('trainings').select('id,title,round_label,late_token,late_until').eq('course_id', c.id); this.af.lates = r.data || []; }
+    { const r = await sb.from('trainings').select('id,title,round_label,late_token,late_until,course_id').eq('course_id', c.id); this.af.lates = r.data || []; }
     const draw = async () => {
       box.innerHTML = Attend.html(c, this.rows, this.att, this.af);
       $$('[data-latebox]', box).forEach(el => { const id = el.dataset.lid;
         let t = this.af.lates.find(x => x.id === id);
-        if (!t) { t = { id }; this.af.lates.push(t); }
+        if (!t) { t = { id, course_id: c.id }; this.af.lates.push(t); }
         t.round_label = t.round_label || (this.rows.find(r => r.id === id) || {}).label;
         LateLink.bind(t, () => draw(), el); });
       $('#at-round').onchange = e => { this.af.round = e.target.value; draw(); };
@@ -4233,7 +4235,7 @@ const LateLink = {
   bind(t, redraw, root) {
     const q = s => (root || document).querySelector(s), qa = s => [...(root || document).querySelectorAll(s)];
     if (q('[data-late-copy]')) q('[data-late-copy]').onclick = async () => { try { await navigator.clipboard.writeText(this.url(t)); toast('คัดลอกลิงก์แล้ว'); } catch (e) { toast(this.url(t)); } };
-    if (q('[data-late-qr]')) q('[data-late-qr]').onclick = () => showBigQR('ลงชื่อย้อนหลัง · ' + (t.round_label || t.title), this.url(t));
+    if (q('[data-late-qr]')) q('[data-late-qr]').onclick = () => showBigQR('ลงชื่อย้อนหลัง · ' + (t.round_label || t.title), this.url(t), t.course_id ? { courseId: t.course_id } : {});
     qa('[data-late-set]').forEach(b => b.onclick = async () => {
       const h = b.dataset.lateSet === '' ? +(q('[data-late-hrs]') || {}).value || 72 : +b.dataset.lateSet;
       if (h === 0 && !confirm('ปิดลิงก์ลงชื่อย้อนหลังของรอบนี้?')) return;
@@ -4962,6 +4964,16 @@ function qrDesign(el, o, keep) {
     return '<svg class="bgdeco" viewBox="0 0 210 297" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">' + s + '</svg>';
   }
   var d = keep;
+  if (d && d.custom) {
+    // พื้นหลังของงาน (รูปที่ผู้จัดอัปโหลด) · เนื้อหาอยู่ในการ์ดขาวโปร่งแสงให้อ่านง่ายทุกภาพ
+    el.style.background = '#0a4f8c url("' + d.custom.replace(/"/g, '%22') + '") center/cover no-repeat';
+    el.innerHTML = '<div class="col"><div class="ccard2">' + (o.logo ? '<div class="lg"><img src="' + o.logo + '" alt=""></div>' : '') +
+      '<div class="tag" style="background:#185d9b;color:#fff">สแกน QR Code</div><h1 style="color:#0f4f86">' + esc(o.title) + '</h1>' +
+      '<div class="qr">' + (o.qr ? '<img src="' + o.qr + '" alt="QR Code">' : '') + '</div>' +
+      '<div class="url" style="color:#0f4f86">' + esc(o.short) + '</div><div class="ft" style="color:#4a6178">' + (o.foot || 'Quiz Live PLPN') + '</div></div></div>';
+    el.dataset.info = 'พื้นหลังของงาน';
+    return d;
+  }
   if (!d) {
     var last = {}; try { last = JSON.parse(sessionStorage.getItem('qrposter.last') || '{}'); } catch (e) {}
     var pi = pick(P.length, last.p), li = pick(LAY.length, last.l), di = pick(DECO.length, last.d);
@@ -4991,14 +5003,45 @@ function qrImage(link, size) {
   const url = cv ? cv.toDataURL('image/png') : im ? im.src : '';
   box.remove(); return url;
 }
-function showBigQR(title, link) {
+function showBigQR(title, link, ctx) {
+  ctx = ctx || {};
   const o = { title, short: link.replace(/^https?:\/\//, ''), logo: logoAbs(), qr: qrImage(link, 900), foot: 'แตะที่ว่างเพื่อปิด' };
   const el = document.createElement('div'); el.className = 'qscreen';
-  el.innerHTML = `<div class="qpaint" id="qpaint"></div><div class="qbtns"><button class="btn light sm" id="qs-roll">🔀 สุ่มแบบใหม่</button><button class="btn sun sm" id="qs-print">🖨 พิมพ์ A4</button></div>`;
+  el.innerHTML = `<div class="qpaint" id="qpaint"></div><div class="qbtns">
+      <button class="btn light sm" id="qs-roll">🔀 สุ่มแบบใหม่</button>
+      ${ctx.courseId ? `<button class="btn light sm" id="qs-own" hidden>🖼 พื้นหลังของงาน</button>
+      <label class="btn light sm" title="อัปโหลดรูปธีมงาน (JPG/PNG/WEBP ไม่เกิน 5 MB) · บันทึกไว้กับงานนี้">⬆ ใส่พื้นหลังเอง<input type="file" id="qs-file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      <button class="btn light sm" id="qs-del" hidden title="ลบพื้นหลังของงาน">🗑</button>` : ''}
+      <button class="btn sun sm" id="qs-print">🖨 พิมพ์ A4</button></div>`;
   document.body.appendChild(el);
-  let d = qrDesign($('#qpaint'), o);
-  $('#qs-roll').onclick = e => { e.stopPropagation(); d = qrDesign($('#qpaint'), o); };
-  $('#qs-print').onclick = e => { e.stopPropagation(); QRPoster.open({ ...o, foot: '' }, d); };
+  let bg = ctx.bg || '', d = bg ? qrDesign($('#qpaint'), o, { custom: bg }) : qrDesign($('#qpaint'), o);
+  const sync = () => { if ($('#qs-own')) $('#qs-own').hidden = !bg; if ($('#qs-del')) $('#qs-del').hidden = !bg; };
+  sync();
+  if (ctx.courseId && ctx.bg == null) sb.from('courses').select('qr_bg').eq('id', ctx.courseId).maybeSingle().then(({ data }) => {
+    if (data && data.qr_bg) { bg = data.qr_bg; d = qrDesign($('#qpaint'), o, { custom: bg }); sync(); } });
+  const stop = e => e.stopPropagation();
+  $('#qs-roll').onclick = e => { stop(e); d = qrDesign($('#qpaint'), o); };
+  if ($('#qs-own')) $('#qs-own').onclick = e => { stop(e); d = qrDesign($('#qpaint'), o, { custom: bg }); };
+  if ($('#qs-file')) { $('#qs-file').closest('label').onclick = stop;
+    $('#qs-file').onchange = async e => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return toast('รองรับเฉพาะ JPG / PNG / WEBP', true);
+      if (f.size > 5 * 1024 * 1024) return toast('ไฟล์ใหญ่เกิน 5 MB · ย่อรูปก่อน', true);
+      const name = ctx.courseId + '/qrbg-' + Date.now() + '.' + (f.type === 'image/jpeg' ? 'jpg' : f.type.split('/')[1]);
+      toast('กำลังอัปโหลด…');
+      const up = await sb.storage.from('course-media').upload(name, f, { contentType: f.type, upsert: false });
+      if (up.error) return toast(errMsg(up.error), true);
+      const url = sb.storage.from('course-media').getPublicUrl(name).data.publicUrl;
+      const { error } = await sb.from('courses').update({ qr_bg: url }).eq('id', ctx.courseId);
+      if (error) return toast(errMsg(error), true);
+      bg = url; d = qrDesign($('#qpaint'), o, { custom: bg }); sync(); toast('ใช้พื้นหลังนี้กับงานนี้แล้ว');
+    }; }
+  if ($('#qs-del')) $('#qs-del').onclick = async e => { stop(e);
+    if (!confirm('ลบพื้นหลังของงานนี้? (กลับไปใช้แบบสุ่ม)')) return;
+    const { error } = await sb.from('courses').update({ qr_bg: '' }).eq('id', ctx.courseId);
+    if (error) return toast(errMsg(error), true);
+    bg = ''; d = qrDesign($('#qpaint'), o); sync(); toast('ลบพื้นหลังแล้ว'); };
+  $('#qs-print').onclick = e => { stop(e); QRPoster.open({ ...o, foot: '' }, d); };
   el.onclick = e => { if (e.target.closest('.qr,.qbtns')) return; el.remove(); try { if (document.fullscreenElement) document.exitFullscreen(); } catch (er) {} };
   try { el.requestFullscreen && el.requestFullscreen().catch(() => {}); } catch (e) {}
   onLeave(() => el.remove());
@@ -5022,6 +5065,7 @@ const QRPoster = {
       .qr{background:#fff;border-radius:7mm;padding:8mm;box-shadow:0 3mm 10mm rgba(0,0,0,.18)}.qr img{width:118mm;height:118mm;display:block;image-rendering:pixelated}
       .url{font-size:15pt;font-weight:600;letter-spacing:.3px}.ft{font-size:11pt}
       .band{position:absolute;left:0;right:0;top:0;height:24mm}.side{position:absolute;left:0;top:0;bottom:0;width:18mm}.frame{position:absolute;inset:8mm;border:3mm solid;border-radius:8mm}
+      .ccard2{background:rgba(255,255,255,.93);border-radius:8mm;padding:9mm 10mm;display:flex;flex-direction:column;align-items:center;gap:5mm;box-shadow:0 4mm 14mm rgba(0,0,0,.25)}.ccard2 .qr{box-shadow:none;padding:2mm}.ccard2 .lg{box-shadow:none}
       .bar{position:sticky;top:0;z-index:5;background:#185d9b;color:#fff;padding:8px 12px;display:flex;gap:8px;align-items:center;font-family:sans-serif;flex-wrap:wrap}
       .bar span{flex:1;min-width:160px;font-size:13px}.bar button{font:inherit;padding:7px 14px;border-radius:8px;border:0;cursor:pointer;font-weight:600}.bar .r{background:#fff;color:#185d9b}.bar .p{background:#f7bb1a;color:#0a3a66}
       @media print{.bar{display:none}body{background:none}#poster{margin:0;box-shadow:none;zoom:1!important}}</style></head>
