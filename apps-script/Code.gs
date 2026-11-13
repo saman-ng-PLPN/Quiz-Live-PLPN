@@ -77,13 +77,14 @@ function loadSigs_(rows) {
 function signSheetHtml_(d) {
   var c = d.course || {}, sh = d.sheet || {}, rows = sh.rows || [], fin = !!sh.finish;
   var h = '<html><head><meta charset="utf-8"><style>' +
-    '@page{size:A4;margin:10mm}body{font-family:Sarabun,Tahoma,sans-serif;font-size:12px;color:#000}' +
+    '@page{size:A4 landscape;margin:8mm}body{font-family:Sarabun,Tahoma,sans-serif;font-size:12px;color:#000}' +
     'table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:2px 4px;vertical-align:middle}th{background:#eee;font-size:11.5px}' +
-    'td.s{height:36px;text-align:center;padding:0}td.s img{max-height:34px;max-width:120px}tr{page-break-inside:avoid}thead{display:table-header-group}' +
+    'td.s{height:40px;text-align:center;padding:0}td.s img{max-height:38px;max-width:150px}tr{page-break-inside:avoid}thead{display:table-header-group}' +
     '.c{text-align:center}</style></head><body>' +
-    '<div style="text-align:center;margin-bottom:6px"><div style="font-size:13px;font-weight:bold">แบบลงทะเบียนผู้เข้าร่วมอบรม</div>' +
+    '<table style="border:0;margin-bottom:6px"><tr><td style="border:0;width:22%">' + (d.logo ? '<img src="' + d.logo + '" style="height:11mm">' : '') + '</td><td style="border:0;text-align:center">' +
+    '<div style="font-size:13px;font-weight:bold">แบบลงทะเบียนผู้เข้าร่วมอบรม</div>' +
     '<div style="font-size:15px;font-weight:bold">' + esc_(c.cert_title || c.title) + '</div>' +
-    '<div style="font-size:12px">' + esc_(sh.label || 'ทุกวัน / ทุกรอบ') + (c.location ? ' · ' + esc_(c.location) : '') + '</div></div>' +
+    '<div style="font-size:12px">' + esc_(sh.label || 'ทุกวัน / ทุกรอบ') + (c.location ? ' · ' + esc_(c.location) : '') + '</div></td><td style="border:0;width:22%"></td></tr></table>' +
     '<table><thead><tr><th style="width:5%">ที่</th><th style="width:11%">รหัสพนักงาน</th><th>ชื่อ - นามสกุล</th><th style="width:19%">แผนก</th>' +
     '<th style="width:13%">วันที่ / รอบที่อบรม</th><th style="width:15%">ลงทะเบียนอบรม<br><span style="font-weight:normal">(ลายเซ็น)</span></th>' +
     (fin ? '<th style="width:15%">บันทึกหลังอบรม<br><span style="font-weight:normal">(ลายเซ็น)</span></th>' : '') + '</tr></thead><tbody>';
@@ -124,6 +125,8 @@ function reportPdfs_(d) {
   if (p.summary_pdf) out.push(Utilities.newBlob(summaryHtml_(d), 'text/html', 'r.html').getAs('application/pdf').setName(fname_('สรุปผู้เข้าอบรม ' + c.title) + '.pdf'));
   if (p.sheet && d.sheet) {
     loadSigs_(d.sheet.rows || []);
+    try { var lg = UrlFetchApp.fetch(String(d.site || 'https://plpnquiz.pages.dev/').replace(/[#?].*$/, '').replace(/\/?$/, '/') + 'logo-hospitals.png', { muteHttpExceptions: true });
+          if (lg.getResponseCode() === 200) d.logo = 'data:image/png;base64,' + Utilities.base64Encode(lg.getBlob().getBytes()); } catch (e) {}
     out.push(Utilities.newBlob(signSheetHtml_(d), 'text/html', 's.html').getAs('application/pdf').setName(fname_('ใบลงชื่อ ' + c.title + ' ' + (d.sheet.label || '')) + '.pdf'));
   }
   return out;
