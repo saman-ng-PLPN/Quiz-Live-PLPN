@@ -61,17 +61,31 @@ function loadSigs_(rows) {
     var res = UrlFetchApp.fetchAll(urls.slice(s, s + 40));
     res.forEach(function (x, j) {
       var p = idx[s + j];
-      if (x.getResponseCode() === 200) rows[p[0]][p[1] + '_img'] = 'data:image/png;base64,' + Utilities.base64Encode(x.getBlob().getBytes());
+      if (x.getResponseCode() === 200) { var by = x.getBlob().getBytes(); rows[p[0]][p[1] + '_img'] = 'data:image/png;base64,' + Utilities.base64Encode(by); rows[p[0]][p[1] + '_wh'] = pngSize_(by); }
     });
   }
   rows.forEach(function (r) {
     ['sig', 'fin'].forEach(function (k) {
       if (!r[k + '_img'] && r[k + '_drive']) {
         try { var b = DriveApp.getFileById(r[k + '_drive']).getBlob();
-              r[k + '_img'] = 'data:' + (b.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(b.getBytes()); } catch (e) {}
+              var by2 = b.getBytes(); r[k + '_img'] = 'data:' + (b.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(by2); r[k + '_wh'] = pngSize_(by2); } catch (e) {}
       }
     });
   });
+}
+
+/** ขนาดรูป PNG จากหัวไฟล์ (กว้าง/สูง) · ไม่ใช่ PNG → null */
+function pngSize_(by) {
+  if (!by || by.length < 24 || (by[1] & 255) !== 0x50) return null;
+  var n = function (i) { return ((by[i] & 255) << 24) + ((by[i + 1] & 255) << 16) + ((by[i + 2] & 255) << 8) + (by[i + 3] & 255); };
+  return [n(16), n(20)];
+}
+/** ลายเซ็นย่อให้พอดีช่อง (กำหนดกว้าง×สูงจริง เพราะตัวแปลง PDF ไม่สนใจ max-width/max-height) */
+function sigImg_(src, wh) {
+  if (!src) return '';
+  var W = 130, H = 34, w = W, h = H;
+  if (wh && wh[0] > 0 && wh[1] > 0) { var k = Math.min(W / wh[0], H / wh[1]); w = Math.round(wh[0] * k); h = Math.round(wh[1] * k); }
+  return '<img src="' + src + '" width="' + w + '" height="' + h + '" style="width:' + w + 'px;height:' + h + 'px">';
 }
 
 function signSheetHtml_(d) {
@@ -79,9 +93,9 @@ function signSheetHtml_(d) {
   var h = '<html><head><meta charset="utf-8"><style>' +
     '@page{size:A4 landscape;margin:8mm}body{font-family:Sarabun,Tahoma,sans-serif;font-size:12px;color:#000}' +
     'table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:2px 4px;vertical-align:middle}th{background:#eee;font-size:11.5px}' +
-    'td.s{height:40px;text-align:center;padding:0}td.s img{max-height:38px;max-width:150px}tr{page-break-inside:avoid}thead{display:table-header-group}' +
+    'td.s{height:40px;text-align:center;padding:2px;overflow:hidden}tr{page-break-inside:avoid}thead{display:table-header-group}' +
     '.c{text-align:center}</style></head><body>' +
-    '<table style="border:0;margin-bottom:6px"><tr><td style="border:0;width:22%">' + (d.logo ? '<img src="' + d.logo + '" style="height:11mm">' : '') + '</td><td style="border:0;text-align:center">' +
+    '<table style="border:0;margin-bottom:6px"><tr><td style="border:0;width:22%">' + (d.logo ? (function () { var h = 40, w = d.logo_wh ? Math.round(d.logo_wh[0] * h / d.logo_wh[1]) : 220; if (w > 230) { h = Math.round(h * 230 / w); w = 230; } return '<img src="' + d.logo + '" width="' + w + '" height="' + h + '" style="width:' + w + 'px;height:' + h + 'px">'; })() : '') + '</td><td style="border:0;text-align:center">' +
     '<div style="font-size:13px;font-weight:bold">แบบลงทะเบียนผู้เข้าร่วมอบรม</div>' +
     '<div style="font-size:15px;font-weight:bold">' + esc_(c.cert_title || c.title) + '</div>' +
     '<div style="font-size:12px">' + esc_(sh.label || 'ทุกวัน / ทุกรอบ') + (c.location ? ' · ' + esc_(c.location) : '') + '</div></td><td style="border:0;width:22%"></td></tr></table>' +
@@ -91,7 +105,7 @@ function signSheetHtml_(d) {
   rows.forEach(function (r, i) {
     h += '<tr><td class="c">' + (i + 1) + '</td><td class="c">' + esc_(r.emp_id) + '</td><td>' + esc_(r.name) + (r.late ? ' <i style="font-size:10px">(ย้อนหลัง)</i>' : '') + '</td><td>' + esc_(r.dept) + '</td>' +
       '<td class="c" style="font-size:10.5px;line-height:1.25">' + esc_(r.when) + '<br>' + esc_(r.round) + '</td>' +
-      '<td class="s">' + (r.sig_img ? '<img src="' + r.sig_img + '">' : '') + '</td>' + (fin ? '<td class="s">' + (r.fin_img ? '<img src="' + r.fin_img + '">' : '') + '</td>' : '') + '</tr>';
+      '<td class="s">' + sigImg_(r.sig_img, r.sig_wh) + '</td>' + (fin ? '<td class="s">' + sigImg_(r.fin_img, r.fin_wh) + '</td>' : '') + '</tr>';
   });
   if (!rows.length) h += '<tr><td colspan="' + (fin ? 7 : 6) + '" class="c" style="padding:12px">ไม่มีรายชื่อ</td></tr>';
   h += '</tbody></table><div style="font-size:10px;text-align:right;margin-top:4px">รวม ' + rows.length + ' คน · สร้างจาก Quiz Live PLPN เมื่อ ' +
@@ -126,7 +140,7 @@ function reportPdfs_(d) {
   if (p.sheet && d.sheet) {
     loadSigs_(d.sheet.rows || []);
     try { var lg = d.logo_url === 'none' ? null : UrlFetchApp.fetch(d.logo_url || (String(d.site || 'https://plpnquiz.pages.dev/').replace(/[#?].*$/, '').replace(/\/?$/, '/') + 'logo-hospitals.png'), { muteHttpExceptions: true });
-          if (lg && lg.getResponseCode() === 200) d.logo = 'data:' + (lg.getHeaders()['Content-Type'] || 'image/png') + ';base64,' + Utilities.base64Encode(lg.getBlob().getBytes()); } catch (e) {}
+          if (lg && lg.getResponseCode() === 200) { var lb = lg.getBlob().getBytes(); d.logo = 'data:' + (lg.getHeaders()['Content-Type'] || 'image/png') + ';base64,' + Utilities.base64Encode(lb); d.logo_wh = pngSize_(lb); } } catch (e) {}
     out.push(Utilities.newBlob(signSheetHtml_(d), 'text/html', 's.html').getAs('application/pdf').setName(fname_('ใบลงชื่อ ' + c.title + ' ' + (d.sheet.label || '')) + '.pdf'));
   }
   return out;
