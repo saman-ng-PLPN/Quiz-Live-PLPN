@@ -198,6 +198,7 @@ details.dl{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.0
 .tiles3 b{display:block;font-size:24px;color:var(--navy)}.tiles3 span{font-size:13px;color:var(--muted)}
 .pmodal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:60}
 .pmodal .box{background:#fff;border-radius:16px;padding:20px;max-height:92vh;overflow:auto}
+.qwrad{display:flex;align-items:center;gap:10px;font-size:15px;cursor:pointer}.qwrad input{width:18px;height:18px;accent-color:var(--navy);margin:0}
 .tcard{background:#fff;border-radius:16px;padding:16px;margin-top:14px;box-shadow:0 1px 3px rgba(0,0,0,.06);display:grid;gap:10px}
 .tcard .fld label{color:var(--muted)}
 .seg{display:flex;gap:8px}
@@ -1063,6 +1064,112 @@ function editorsDialog(q, canOwn, onChange) {
   onLeave(() => el.remove());
 }
 
+// ---------- ส่งออกชุดคำถามเป็นไฟล์ Word (.docx) — สร้างในเบราว์เซอร์ ----------
+const DOCX_URL = 'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js';
+const QuizWord = {
+  dialog(quiz, qs) {
+    const nImg = qs.reduce((n, q) => n + (q.image_url ? 1 : 0) + (q.images || []).filter(Boolean).length, 0);
+    const d = document.createElement('div'); d.className = 'pmodal';
+    d.innerHTML = `<form class="box" style="max-width:460px;width:100%;text-align:left;display:grid;gap:12px">
+      <h3 style="margin:0">📄 ส่งออกเป็นไฟล์ Word</h3>
+      <p class="hint" style="margin:0">${esc(quiz.title || 'ชุดคำถาม')} · ${qs.length} ข้อ · ใช้ข้อมูลที่แสดงอยู่ในหน้านี้ (รวมที่ยังไม่ได้บันทึก)</p>
+      <div style="display:grid;gap:6px"><b style="font-size:14px">เฉลย</b>
+        <label class="qwrad"><input type="radio" name="qw-key" value="none" checked> ไม่ใส่เฉลย (สำหรับแจกผู้สอบ)</label>
+        <label class="qwrad"><input type="radio" name="qw-key" value="end"> เฉลยแยกหน้าสุดท้าย</label>
+        <label class="qwrad"><input type="radio" name="qw-key" value="inline"> ทำเครื่องหมาย ✓ ที่คำตอบในแต่ละข้อ</label></div>
+      <div style="display:grid;gap:6px"><b style="font-size:14px">ส่วนประกอบ</b>
+        <label class="switch"><input type="checkbox" id="qw-name" checked> ช่องกรอกชื่อ-สกุล รหัส แผนก วันที่ และคะแนน</label>
+        <label class="switch"><input type="checkbox" id="qw-img" ${nImg ? 'checked' : 'disabled'}> ใส่รูปภาพ${nImg ? ` (${nImg} รูป)` : ' (ชุดนี้ไม่มีรูป)'}</label></div>
+      <p class="hint" style="margin:0" id="qw-msg"></p>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn light" data-x>ยกเลิก</button><button class="btn sun" id="qw-go">⬇ ดาวน์โหลด Word</button></div></form>`;
+    document.body.appendChild(d);
+    const close = () => d.remove(); d.querySelector('[data-x]').onclick = close; d.onclick = e => { if (e.target === d) close(); };
+    d.querySelector('form').onsubmit = async e => {
+      e.preventDefault();
+      const b = d.querySelector('#qw-go'), msg = d.querySelector('#qw-msg'); b.disabled = true;
+      try {
+        await this.download(quiz, qs, { key: d.querySelector('[name=qw-key]:checked').value, name: d.querySelector('#qw-name').checked,
+          img: d.querySelector('#qw-img').checked }, t => { msg.textContent = t; });
+        close(); toast('ดาวน์โหลดไฟล์ Word แล้ว');
+      } catch (err) { b.disabled = false; msg.textContent = ''; toast(errMsg(err), true); }
+    };
+  },
+  // รูปทุกชนิด (รวม webp) → JPEG ผ่าน canvas · คืนขนาดจริงไว้คำนวณย่อ
+  async image(url) {
+    try {
+      const r = await fetch(url); if (!r.ok) return null;
+      const bmp = await createImageBitmap(await r.blob()), k = Math.min(1, 1400 / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.9));
+      return { data: new Uint8Array(await blob.arrayBuffer()), w: c.width, h: c.height };
+    } catch (e) { return null; }
+  },
+  fit(im, maxW, maxH) { const k = Math.min(1, maxW / im.w, maxH / im.h); return { width: Math.round(im.w * k), height: Math.round(im.h * k) }; },
+  async download(quiz, qs, o, say) {
+    say('กำลังโหลดตัวสร้างไฟล์ Word…');
+    try { await loadScript(DOCX_URL); } catch (e) { throw new Error('โหลดตัวสร้างไฟล์ Word ไม่สำเร็จ ตรวจสอบอินเทอร์เน็ต'); }
+    const D = window.docx, imgs = {};
+    if (o.img) {
+      const urls = [...new Set(qs.flatMap(q => [q.image_url, ...(isText(q) ? [] : q.images || [])]).filter(Boolean))];
+      for (let i = 0; i < urls.length; i++) { say(`กำลังเตรียมรูป ${i + 1}/${urls.length}…`); imgs[urls[i]] = await this.image(urls[i]); }
+    }
+    say('กำลังสร้างไฟล์…');
+    const FONT = 'TH Sarabun New', P = (children, opt = {}) => new D.Paragraph({ children, ...opt });
+    const T = (text, opt = {}) => new D.TextRun({ text: String(text ?? ''), ...opt });
+    const pic = (url, w, h) => imgs[url] ? new D.ImageRun({ data: imgs[url].data, transformation: this.fit(imgs[url], w, h) }) : null;
+    const scored = qs.filter(q => !isText(q)).length;
+    const body = [
+      P([T(quiz.title || 'ชุดคำถาม', { bold: true, size: 40 })], { alignment: D.AlignmentType.CENTER, spacing: { after: 60 } }),
+      P([T([quiz.department ? 'แผนก ' + quiz.department : '', `${qs.length} ข้อ`, scored !== qs.length ? `(ปรนัย ${scored} · ข้อเขียน ${qs.length - scored})` : ''].filter(Boolean).join(' · '), { color: '555555' })],
+        { alignment: D.AlignmentType.CENTER, spacing: { after: quiz.description ? 60 : 200 } })];
+    if (quiz.description) body.push(P([T(quiz.description, { italics: true })], { alignment: D.AlignmentType.CENTER, spacing: { after: 200 } }));
+    if (o.name) {
+      const tab = pos => ({ type: D.TabStopType.LEFT, position: pos, leader: 'dot' }), W = 9638;
+      body.push(P([T('ชื่อ-สกุล '), T('\t'), T('  รหัสพนักงาน '), T('\t')], { tabStops: [tab(6200), tab(W)], spacing: { after: 120 } }),
+        P([T('แผนก '), T('\t'), T('  วันที่ '), T('\t')].concat(scored ? [T('  คะแนน ', { bold: true }), T('\t'), T(` / ${scored}`, { bold: true })] : []),
+          { tabStops: scored ? [tab(4600), tab(7300), tab(8900)] : [tab(6200), tab(W)], spacing: { after: 200 },
+            border: { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: '999999', space: 6 } } }));
+    }
+    qs.forEach((q, i) => {
+      body.push(P([T(`${i + 1}. `, { bold: true }), T(q.text || '(ไม่มีข้อความคำถาม)', { bold: true }), ...(isText(q) ? [T('  (ข้อเขียน)', { color: '777777' })] : [])],
+        { keepNext: true, spacing: { before: 160, after: 60 } }));
+      const qi = q.image_url && pic(q.image_url, 400, 260);
+      if (qi) body.push(P([qi], { keepNext: true, indent: { left: 360 }, spacing: { after: 60 } }));
+      if (isText(q)) {
+        for (let k = 0; k < 3; k++) body.push(P([T('.'.repeat(120), { color: '999999' })], { indent: { left: 360 }, spacing: { after: 40 } }));
+        return;
+      }
+      const idx = [0, 1, 2, 3].filter(c => (q.choices[c] || '').trim() || (q.images || [])[c]);
+      idx.forEach((c, n) => {
+        const ok = o.key === 'inline' && c === q.correct_index, ci = (q.images || [])[c] && pic(q.images[c], 160, 120);
+        body.push(P([T(`${LETTERS[c]}. `, { bold: ok }), ...(ci ? [ci, T(' ')] : []), T(q.choices[c] || '', { bold: ok }), ...(ok ? [T('  ✓ เฉลย', { bold: true, color: '1B7A3E' })] : [])],
+          { keepNext: n < idx.length - 1, indent: { left: 720 }, spacing: { after: 20 } }));
+      });
+    });
+    if (o.key === 'end' && scored) {
+      const cells = qs.map((q, i) => `${i + 1}. ${isText(q) ? 'ข้อเขียน' : LETTERS[q.correct_index] || '-'}`), COLS = 5, rows = [];
+      for (let i = 0; i < cells.length; i += COLS) rows.push(new D.TableRow({ children: Array.from({ length: COLS }, (_, k) =>
+        new D.TableCell({ width: { size: 20, type: D.WidthType.PERCENTAGE }, margins: { top: 60, bottom: 60, left: 120, right: 120 },
+          children: [P([T(cells[i + k] || '')])] })) }));
+      body.push(P([T('เฉลย · ' + (quiz.title || 'ชุดคำถาม'), { bold: true, size: 36 })], { pageBreakBefore: true, alignment: D.AlignmentType.CENTER, spacing: { after: 200 } }),
+        new D.Table({ width: { size: 100, type: D.WidthType.PERCENTAGE }, rows }));
+    }
+    const doc = new D.Document({
+      creator: CFG.APP_NAME || 'Quiz Live PLPN', title: quiz.title || 'ชุดคำถาม',
+      styles: { default: { document: { run: { font: FONT, size: 32 } } } },
+      sections: [{ properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 } } },
+        footers: { default: new D.Footer({ children: [P([T((quiz.title || '') + ' · หน้า ', { size: 24, color: '777777' }),
+          new D.TextRun({ children: [D.PageNumber.CURRENT], size: 24, color: '777777' })], { alignment: D.AlignmentType.RIGHT })] }) },
+        children: body }]
+    });
+    const blob = await D.Packer.toBlob(doc), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ชุดคำถาม-${quiz.title || 'ไม่มีชื่อ'}${o.key !== 'none' ? '-เฉลย' : ''}.docx`.replace(/[\\/:*?"<>|]/g, '_');
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+};
+
 const Admin = {
   tab: 'mine', q: '',
   async list() {
@@ -1430,7 +1537,8 @@ const Admin = {
 
     app.innerHTML = adminShell(user, `
       <div class="row"><button class="btn light sm" id="back">← กลับ</button>
-        <h2 class="sec grow">${quiz.id ? 'แก้ไขชุดคำถาม' : 'สร้างชุดคำถามใหม่'}</h2></div>
+        <h2 class="sec grow">${quiz.id ? 'แก้ไขชุดคำถาม' : 'สร้างชุดคำถามใหม่'}</h2>
+        <button class="btn light sm" id="toword" title="ส่งออกชุดคำถามเป็นไฟล์ Word สำหรับพิมพ์หรือแก้ไขต่อ">📄 ส่งออก Word</button></div>
       ${quiz.id && quiz.owner_id !== user.id ? `<div class="notice">${this.canOwn ? '⚙ กำลังแก้ไขในฐานะผู้ดูแลระบบ' : '✏ คุณเป็นผู้ร่วมแก้ไขชุดนี้'} · เจ้าของ: <b>${esc(quiz.owner_email)}</b></div>` : ''}
       <div class="meta-grid">
         <div class="fld"><label for="f-title">ชื่อเกม *</label>
@@ -1462,6 +1570,8 @@ const Admin = {
     $('#addq').onclick = () => { this.qs.push(this.blankQ()); this.touch(); this.renderQs();
       const cards = $$('.qcard'); cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
       $('textarea', cards[cards.length - 1]).focus(); };
+    $('#toword').onclick = () => QuizWord.dialog({ title: $('#f-title').value.trim(), department: $('#f-dept').value.trim(), description: $('#f-desc').value.trim() },
+      this.qs.filter(q => (q.text || '').trim() || isText(q) || q.choices.some(c => (c || '').trim())));
     $('#save').onclick = () => this.saveQuiz(false);
     $('#saveplay').onclick = () => this.saveQuiz(true);
     const ql = $('#qlist');
